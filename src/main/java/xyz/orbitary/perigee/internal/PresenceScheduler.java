@@ -124,13 +124,14 @@ public final class PresenceScheduler {
             if (error == null) {
                 batch.forEach(f -> f.complete(null));
             } else {
-                onFailure(batch, error instanceof CompletionException && error.getCause() != null ? error.getCause() : error);
+                onFailure(activity, batch, error instanceof CompletionException && error.getCause() != null ? error.getCause() : error);
             }
         });
     }
 
-    private synchronized void onFailure(List<? extends CompletableFuture<@Nullable Void>> batch, Throwable error) {
+    private synchronized void onFailure(@Nullable Activity activity, List<? extends CompletableFuture<@Nullable Void>> batch, Throwable error) {
         if (error instanceof RpcException || closed) {
+            if (latest == activity) latest = null;
             batch.forEach(f -> f.completeExceptionally(error));
             return;
         }
