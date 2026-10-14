@@ -8,6 +8,7 @@
 package xyz.orbitary.perigee.internal;
 
 import org.jetbrains.annotations.Nullable;
+import xyz.orbitary.perigee.Logger;
 import xyz.orbitary.perigee.PerigeeException;
 import xyz.orbitary.perigee.protocol.Frame;
 import xyz.orbitary.perigee.protocol.FrameCodec;
@@ -73,8 +74,18 @@ public final class Connection {
         } catch (IOException e) {
             pending.remove(nonce);
             response.completeExceptionally(new PerigeeException("Failed to write to Discord", e));
+            abandon();
         }
         return response;
+    }
+
+    /**
+     * A failed write means the connection is dead even if no end-of-stream was seen.
+     */
+    private void abandon() {
+        try {
+            transport.close();
+        } catch (IOException ignored) {}
     }
 
     /**
@@ -134,7 +145,14 @@ public final class Connection {
                 return false;
             }
             case FRAME -> {
-                return onMessage(RpcMessage.parse(frame.payload()));
+                RpcMessage message;
+                try {
+                    message = RpcMessage.parse(frame.payload());
+                } catch (RuntimeException e) {
+                    Logger.warn("Ignoring malformed frame from Discord", e);
+                    return true;
+                }
+                return onMessage(message);
             }
             default -> {}
         }
