@@ -26,8 +26,12 @@ public final class FrameCodec {
 
     private FrameCodec() {}
 
+    /**
+     * @throws IllegalArgumentException if the payload exceeds the size Discord accepts
+     */
     public static byte[] encode(Opcode opcode, String payload) {
         byte[] body = payload.getBytes(StandardCharsets.UTF_8);
+        if (body.length > MAX_PAYLOAD) throw new IllegalArgumentException("Payload of " + body.length + " bytes exceeds the " + MAX_PAYLOAD + " byte limit");
         return ByteBuffer.allocate(HEADER_SIZE + body.length)
           .order(ByteOrder.LITTLE_ENDIAN)
           .putInt(opcode.code())

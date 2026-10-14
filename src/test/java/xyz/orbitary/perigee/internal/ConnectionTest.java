@@ -258,6 +258,18 @@ class ConnectionTest {
     }
 
     @Test
+    void anOversizedRequestFailsWithoutBeingWritten() throws Exception {
+        connection.start("123");
+        take(transport.written);
+
+        CompletableFuture<RpcMessage> request = connection.request("SET_ACTIVITY", Map.of("blob", "x".repeat(1 << 20)));
+
+        assertInstanceOf(PerigeeException.class, failureOf(request));
+        assertTrue(transport.written.isEmpty());
+        assertTrue(listener.closed.isEmpty(), "the connection must survive an oversized request");
+    }
+
+    @Test
     void malformedFramesAreSkipped() throws Exception {
         connection.start("123");
 

@@ -67,10 +67,16 @@ public final class Connection {
     public CompletableFuture<RpcMessage> request(String cmd, Map<String, Object> args, @Nullable String evt) {
         if (closing.get()) return CompletableFuture.failedFuture(new PerigeeException("Connection is closed"));
         String nonce = UUID.randomUUID().toString();
+        byte[] frame;
+        try {
+            frame = FrameCodec.encode(Opcode.FRAME, Requests.command(cmd, args, nonce, evt));
+        } catch (IllegalArgumentException e) {
+            return CompletableFuture.failedFuture(new PerigeeException("Request " + cmd + " is too large to send", e));
+        }
         CompletableFuture<RpcMessage> response = new CompletableFuture<>();
         pending.put(nonce, response);
         try {
-            transport.write(FrameCodec.encode(Opcode.FRAME, Requests.command(cmd, args, nonce, evt)));
+            transport.write(frame);
         } catch (IOException e) {
             pending.remove(nonce);
             response.completeExceptionally(new PerigeeException("Failed to write to Discord", e));

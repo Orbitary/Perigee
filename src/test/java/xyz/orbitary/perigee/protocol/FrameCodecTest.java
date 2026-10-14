@@ -88,6 +88,8 @@ class FrameCodecTest {
 
         assertEquals(atLimit, FrameCodec.decode(new ByteArrayInputStream(FrameCodec.encode(Opcode.FRAME, atLimit))).payload());
         assertThrows(IOException.class, () -> FrameCodec.decode(new ByteArrayInputStream(header(1, FrameCodec.MAX_PAYLOAD + 1))));
+        assertThrows(IllegalArgumentException.class, () -> FrameCodec.encode(Opcode.FRAME, atLimit + "a"));
+        assertThrows(IllegalArgumentException.class, () -> FrameCodec.encode(Opcode.FRAME, "é".repeat(FrameCodec.MAX_PAYLOAD / 2 + 1)));
     }
 
     @Test
