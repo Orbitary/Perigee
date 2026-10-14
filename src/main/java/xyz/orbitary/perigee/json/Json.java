@@ -249,24 +249,37 @@ public final class Json {
             int start = pos;
             boolean integral = true;
             if (peek('-')) pos++;
-            while (!atEnd()) {
-                char c = text.charAt(pos);
-                if (c >= '0' && c <= '9') {
-                    pos++;
-                } else if (c == '.' || c == 'e' || c == 'E' || c == '+' || c == '-') {
-                    integral = false;
-                    pos++;
-                } else {
-                    break;
-                }
+            if (peek('0')) {
+                pos++;
+            } else {
+                digits();
+            }
+            if (peek('.')) {
+                integral = false;
+                pos++;
+                digits();
+            }
+            if (peek('e') || peek('E')) {
+                integral = false;
+                pos++;
+                if (peek('+') || peek('-')) pos++;
+                digits();
             }
             String token = text.subSequence(start, pos).toString();
-            try {
-                return integral ? (Number)Long.parseLong(token) : (Number)Double.parseDouble(token);
-            } catch (NumberFormatException e) {
-                pos = start;
-                throw error("Invalid number");
+            if (integral) {
+                try {
+                    return Long.parseLong(token);
+                } catch (NumberFormatException ignored) {}
             }
+            return Double.parseDouble(token);
+        }
+
+        private void digits() {
+            int start = pos;
+            while (!atEnd() && text.charAt(pos) >= '0' && text.charAt(pos) <= '9') {
+                pos++;
+            }
+            if (pos == start) throw error("Invalid number");
         }
 
         private boolean peek(char c) {
