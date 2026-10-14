@@ -11,7 +11,7 @@ import org.jetbrains.annotations.Nullable;
 
 
 /**
- * The connection to Discord dropped.
+ * A connection that was ready dropped.
  *
  * @param cause        why it dropped, if known
  * @param reconnecting whether the client will try again

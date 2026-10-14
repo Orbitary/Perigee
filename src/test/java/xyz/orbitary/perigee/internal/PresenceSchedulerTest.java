@@ -24,6 +24,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static xyz.orbitary.perigee.support.Tests.await;
@@ -35,6 +36,7 @@ class PresenceSchedulerTest {
 
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private final List<String> sent = Collections.synchronizedList(new ArrayList<>());
+    private final List<@Nullable Activity> sentActivities = Collections.synchronizedList(new ArrayList<>());
     private final AtomicInteger failuresLeft = new AtomicInteger();
     private volatile boolean discordRejects;
     private volatile boolean discordSilent;
@@ -44,6 +46,7 @@ class PresenceSchedulerTest {
     }
 
     private CompletableFuture<@Nullable Void> send(@Nullable Activity activity) {
+        sentActivities.add(activity);
         sent.add(activity == null ? "clear" : String.valueOf(activity.details()).substring(PREFIX.length()));
         if (discordSilent) return CompletableFuture.failedFuture(new PerigeeTimeoutException("no reply"));
         if (discordRejects) return CompletableFuture.failedFuture(new RpcException(4000, "rejected"));
@@ -246,6 +249,101 @@ class PresenceSchedulerTest {
         await(scheduler.submit(activity("later")));
 
         assertEquals(List.of("lost", "later"), sent);
+    }
+
+    @Test
+    void anActivityEqualToTheLastSentOneIsNotSentAgainButStillCompletes() throws Exception {
+        PresenceScheduler scheduler = scheduler(5, 1_000);
+        scheduler.setOnline(true);
+        await(scheduler.submit(activity("same")));
+
+        await(scheduler.submit(activity("same")));
+        await(scheduler.submit(activity("other")));
+        await(scheduler.submit(activity("same")));
+
+        assertEquals(List.of("same", "other", "same"), sent);
+    }
+
+    @Test
+    void identicalUpdatesDoNotUseUpRateLimitSlots() throws Exception {
+        PresenceScheduler scheduler = scheduler(1, 5_000);
+        scheduler.setOnline(true);
+        await(scheduler.submit(activity("same")));
+
+        for (int i = 0; i < 20; i++) {
+            await(scheduler.submit(activity("same")));
+        }
+
+        assertEquals(List.of("same"), sent);
+    }
+
+    @Test
+    void clearingTwiceSendsOnce() throws Exception {
+        PresenceScheduler scheduler = scheduler(5, 1_000);
+        scheduler.setOnline(true);
+
+        await(scheduler.submit(null));
+        await(scheduler.submit(null));
+
+        assertEquals(List.of("clear"), sent);
+    }
+
+    @Test
+    void aReconnectForgetsWhatWasSentSoTheSameActivityGoesOutAgain() throws Exception {
+        PresenceScheduler scheduler = scheduler(5, 1_000);
+        scheduler.setOnline(true);
+        await(scheduler.submit(activity("same")));
+        scheduler.setOnline(false);
+        scheduler.setOnline(true);
+        Thread.sleep(100);
+
+        await(scheduler.submit(activity("same")));
+
+        assertEquals(List.of("same", "same"), sent);
+    }
+
+    @Test
+    void aFailedSendIsNotRememberedAsDelivered() throws Exception {
+        PresenceScheduler scheduler = scheduler(5, 1_000);
+        scheduler.setOnline(true);
+        discordRejects = true;
+        failureOf(scheduler.submit(activity("bad")));
+        discordRejects = false;
+
+        await(scheduler.submit(activity("bad")));
+
+        assertEquals(List.of("bad", "bad"), sent);
+    }
+
+    @Test
+    void updateIsAnAtomicReadModifyWrite() throws Exception {
+        PresenceScheduler scheduler = scheduler(1_000, 1_000);
+        scheduler.setOnline(true);
+        int writers = 50;
+        List<CompletableFuture<@Nullable Void>> futures = Collections.synchronizedList(new ArrayList<>());
+
+        IntStream.range(0, writers).parallel().forEach(i ->
+          futures.add(scheduler.update(current -> (current == null ? Activity.builder() : current.toBuilder()).extra("field_" + i, i).build())));
+        await(CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)));
+
+        Activity last = sentActivities.getLast();
+        assertNotNull(last);
+        assertEquals(writers, last.extra().size(), "no concurrent update may be lost");
+    }
+
+    @Test
+    void updateOnAClosedSchedulerFailsWithoutRunningTheFunction() {
+        PresenceScheduler scheduler = scheduler(5, 1_000);
+        scheduler.close();
+        AtomicInteger calls = new AtomicInteger();
+
+        CompletableFuture<@Nullable Void> result = scheduler.update(current -> {
+            calls.incrementAndGet();
+            return activity("never");
+        });
+
+        assertInstanceOf(PerigeeException.class, failureOf(result));
+        assertEquals(0, calls.get());
     }
 
     @Test

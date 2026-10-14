@@ -17,11 +17,13 @@ import xyz.orbitary.perigee.activity.Activity;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.function.LongSupplier;
 
 
@@ -48,6 +50,8 @@ public final class PresenceScheduler {
     private final List<CompletableFuture<@Nullable Void>> waiters = new ArrayList<>();
     private @Nullable Activity latest;
     private @Nullable Activity accepted;
+    private @Nullable Activity lastSent;
+    private boolean lastSentValid;
     private boolean dirty;
     private boolean online;
     private boolean closed;
@@ -78,8 +82,16 @@ public final class PresenceScheduler {
         return done;
     }
 
+    /**
+     * Replaces the latest requested activity with the result of {@code transform}, which sees it, or {@code null}, as one atomic step.
+     */
+    public synchronized CompletableFuture<Void> update(Function<@Nullable Activity, Activity> transform) {
+        return closed ? submit(null) : submit(transform.apply(latest));
+    }
+
     public synchronized void setOnline(boolean online) {
         this.online = online;
+        if (!online) lastSentValid = false;
         if (online && latest != null) dirty = true;
         flush();
     }
@@ -94,6 +106,12 @@ public final class PresenceScheduler {
 
     private void flush() {
         if (closed || !online || !dirty || timer != null) return;
+        if (lastSentValid && Objects.equals(latest, lastSent)) {
+            dirty = false;
+            waiters.forEach(f -> f.complete(null));
+            waiters.clear();
+            return;
+        }
         long now = clock.getAsLong();
         while (!sent.isEmpty() && now - sent.peekFirst() >= windowNanos) {
             sent.pollFirst();
@@ -105,6 +123,8 @@ public final class PresenceScheduler {
         }
         sent.addLast(now);
         Activity activity = latest;
+        lastSent = activity;
+        lastSentValid = true;
         List<CompletableFuture<@Nullable Void>> batch = new ArrayList<>(waiters);
         waiters.clear();
         dirty = false;
@@ -138,6 +158,7 @@ public final class PresenceScheduler {
     }
 
     private synchronized void onFailure(@Nullable Activity activity, List<? extends CompletableFuture<@Nullable Void>> batch, Throwable error) {
+        lastSentValid = false;
         if (error instanceof RpcException) {
             Logger.warn("Discord rejected a presence update: {0}", String.valueOf(error.getMessage()));
             if (latest == activity) latest = accepted;

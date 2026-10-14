@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -42,6 +43,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.UnaryOperator;
 
 
 /**
@@ -73,16 +75,16 @@ public final class PerigeeClient implements AutoCloseable {
     private final TransportOpener opener;
     private final Connection.Timeouts timeouts;
     private final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(1, task -> Thread.ofPlatform().daemon().name("perigee-scheduler").unstarted(task));
-    private final ExecutorService events = Executors.newSingleThreadExecutor(task -> Thread.ofPlatform().daemon().name("perigee-events").unstarted(task));
+    private final Executor events;
+    private final @Nullable ExecutorService ownedEvents;
     private final PresenceScheduler presence = new PresenceScheduler(scheduler, this::sendActivity);
     private final List<Handler<?>> handlers = new CopyOnWriteArrayList<>();
     private final CompletableFuture<DiscordUser> connectFuture = new CompletableFuture<>();
 
     private final Object lock = new Object();
     private @Nullable Connection connection;
-    private boolean started;
-    private boolean closed;
-    private boolean ready;
+    private ConnectionState state = ConnectionState.IDLE;
+    private @Nullable Ready currentReady;
     private boolean everReady;
     private int attempts;
     private boolean outageLogged;
@@ -111,6 +113,13 @@ public final class PerigeeClient implements AutoCloseable {
         this.maxDelay = builder.maxDelay;
         this.opener = builder.opener();
         this.timeouts = builder.timeouts;
+        if (builder.eventExecutor != null) {
+            this.events = builder.eventExecutor;
+            this.ownedEvents = null;
+        } else {
+            this.ownedEvents = Executors.newSingleThreadExecutor(task -> Thread.ofPlatform().daemon().name("perigee-events").unstarted(task));
+            this.events = ownedEvents;
+        }
     }
 
     public static Builder builder(String applicationId) {
@@ -126,9 +135,9 @@ public final class PerigeeClient implements AutoCloseable {
      */
     public CompletableFuture<DiscordUser> connect() {
         synchronized (lock) {
-            if (closed) return CompletableFuture.failedFuture(new PerigeeException("Client is closed"));
-            if (!started) {
-                started = true;
+            if (state == ConnectionState.CLOSED) return CompletableFuture.failedFuture(new PerigeeException("Client is closed"));
+            if (state == ConnectionState.IDLE) {
+                state = ConnectionState.CONNECTING;
                 scheduler.execute(this::attempt);
             }
         }
@@ -161,15 +170,29 @@ public final class PerigeeClient implements AutoCloseable {
         return result;
     }
 
+    /**
+     * Sets the presence. Updates are rate limited and coalesced: only the newest is sent, and every future for a coalesced update completes with it.
+     * An activity equal to the one last sent on this connection is not sent again, but its future still completes.
+     */
     public CompletableFuture<Void> setActivity(Activity activity) {
-        if (!activity.type().rpcSupported()) {
-            Logger.warn("Activity type {0} is documented as gateway-only; Discord may reject it over IPC", activity.type());
-        }
+        warnIfGatewayOnly(activity);
         return presence.submit(activity);
     }
 
     public CompletableFuture<Void> setActivity(Consumer<Activity.Builder> configure) {
         return setActivity(Activity.of(configure));
+    }
+
+    /**
+     * Changes the last requested activity, or an empty one if there is none, as one atomic step.
+     * The function runs while holding an internal lock, so keep it quick and do not call back into the client.
+     */
+    public CompletableFuture<Void> updateActivity(UnaryOperator<Activity.Builder> update) {
+        return presence.update(current -> {
+            Activity next = update.apply(current == null ? Activity.builder() : current.toBuilder()).build();
+            warnIfGatewayOnly(next);
+            return next;
+        });
     }
 
     public CompletableFuture<Void> clearActivity() {
@@ -184,15 +207,36 @@ public final class PerigeeClient implements AutoCloseable {
         return command(Requests.REJECT_JOIN, Map.of("user_id", userId));
     }
 
+    /**
+     * Registers a handler. All handlers run one after another on the {@code perigee-events} thread, or on the executor given to
+     * {@link Builder#eventExecutor(Executor)}, so a slow handler delays the others.
+     */
     public <E extends PerigeeEvent> Subscription on(Class<E> type, Consumer<? super E> consumer) {
+        return on(type, consumer, false);
+    }
+
+    public <E extends PerigeeEvent> Subscription on(Class<E> type, Consumer<? super E> consumer, boolean replayLast) {
         Handler<E> handler = new Handler<>(type, consumer);
-        handlers.add(handler);
+        Ready replay;
+        synchronized (lock) {
+            handlers.add(handler);
+            replay = replayLast ? currentReady : null;
+        }
+        if (replay != null) dispatch(List.of(handler), replay);
         return () -> handlers.remove(handler);
     }
 
     public boolean isConnected() {
+        return isReady();
+    }
+
+    public boolean isReady() {
+        return state() == ConnectionState.READY;
+    }
+
+    public ConnectionState state() {
         synchronized (lock) {
-            return ready;
+            return state;
         }
     }
 
@@ -203,17 +247,17 @@ public final class PerigeeClient implements AutoCloseable {
     public void close() {
         Connection current;
         synchronized (lock) {
-            if (closed) return;
-            closed = true;
+            if (state == ConnectionState.CLOSED) return;
+            state = ConnectionState.CLOSED;
+            currentReady = null;
             current = connection;
             connection = null;
-            ready = false;
         }
         presence.close();
         connectFuture.completeExceptionally(new PerigeeException("Client is closed"));
         if (current != null) current.close();
         scheduler.shutdown();
-        events.shutdown();
+        if (ownedEvents != null) ownedEvents.shutdown();
     }
 
     private void attempt() {
@@ -222,10 +266,11 @@ public final class PerigeeClient implements AutoCloseable {
             Transport transport = opener.open();
             created = new Connection(transport, listener, scheduler, timeouts);
             synchronized (lock) {
-                if (closed) {
+                if (state == ConnectionState.CLOSED) {
                     created.close();
                     return;
                 }
+                state = ConnectionState.CONNECTING;
                 connection = created;
             }
             created.start(applicationId);
@@ -237,12 +282,18 @@ public final class PerigeeClient implements AutoCloseable {
 
     private void onReady(DiscordUser user) {
         Connection current;
+        Ready readyEvent = new Ready(user);
+        List<Handler<?>> snapshot;
         synchronized (lock) {
-            ready = true;
+            if (state != ConnectionState.CLOSED) {
+                state = ConnectionState.READY;
+                currentReady = readyEvent;
+            }
             everReady = true;
             attempts = 0;
             outageLogged = false;
             current = connection;
+            snapshot = new ArrayList<>(handlers);
         }
         presence.setOnline(true);
         if (current != null) {
@@ -253,7 +304,7 @@ public final class PerigeeClient implements AutoCloseable {
             }
         }
         connectFuture.complete(user);
-        fire(new Ready(user));
+        dispatch(snapshot, readyEvent);
     }
 
     private void onEvent(RpcMessage message) {
@@ -276,12 +327,13 @@ public final class PerigeeClient implements AutoCloseable {
         long delay = 0;
         synchronized (lock) {
             connection = null;
-            wasReady = ready;
-            ready = false;
-            stop = closed;
+            currentReady = null;
+            wasReady = state == ConnectionState.READY;
+            stop = state == ConnectionState.CLOSED;
             fatal = !everReady && cause instanceof RpcException rpc && rpc.isFatal();
             retry = !stop && !fatal && autoReconnect;
             if (retry) {
+                state = ConnectionState.BACKOFF;
                 int attempt = attempts++;
                 delay = cause instanceof RpcException rpc && rpc.isRateLimited() ? maxDelay.toMillis() : backoff(attempt);
                 logOutage = !outageLogged;
@@ -322,17 +374,26 @@ public final class PerigeeClient implements AutoCloseable {
     private CompletableFuture<Void> command(String cmd, Map<String, Object> args) {
         Connection current;
         synchronized (lock) {
-            current = ready ? connection : null;
+            current = state == ConnectionState.READY ? connection : null;
         }
         if (current == null) return CompletableFuture.failedFuture(new PerigeeException("Not connected to Discord"));
         return current.request(cmd, args).thenAccept(message -> {});
     }
 
+    private void warnIfGatewayOnly(Activity activity) {
+        if (!activity.type().rpcSupported()) {
+            Logger.warn("Activity type {0} is documented as gateway-only; Discord may reject it over IPC", activity.type());
+        }
+    }
+
     private void fire(PerigeeEvent event) {
-        List<Handler<?>> snapshot = new ArrayList<>(handlers);
+        dispatch(new ArrayList<>(handlers), event);
+    }
+
+    private void dispatch(List<Handler<?>> targets, PerigeeEvent event) {
         try {
             events.execute(() -> {
-                for (Handler<?> handler : snapshot) {
+                for (Handler<?> handler : targets) {
                     try {
                         handler.accept(event);
                     } catch (RuntimeException e) {
@@ -349,6 +410,8 @@ public final class PerigeeClient implements AutoCloseable {
         private Duration minDelay = Duration.ofSeconds(1);
         private Duration maxDelay = Duration.ofSeconds(30);
         private final List<String> searchDirectories = new ArrayList<>();
+        private int preferredIndex;
+        private @Nullable Executor eventExecutor;
         private @Nullable TransportOpener opener;
         private Connection.Timeouts timeouts = Connection.Timeouts.DEFAULT;
 
@@ -376,6 +439,17 @@ public final class PerigeeClient implements AutoCloseable {
             return this;
         }
 
+        public Builder preferredIndex(int preferredIndex) {
+            if (preferredIndex < 0 || preferredIndex > EndpointResolver.MAX_INDEX) throw new IllegalArgumentException("preferredIndex must be between 0 and " + EndpointResolver.MAX_INDEX);
+            this.preferredIndex = preferredIndex;
+            return this;
+        }
+
+        public Builder eventExecutor(Executor eventExecutor) {
+            this.eventExecutor = eventExecutor;
+            return this;
+        }
+
         Builder transport(TransportOpener opener) {
             this.opener = opener;
             return this;
@@ -395,7 +469,8 @@ public final class PerigeeClient implements AutoCloseable {
             boolean windows = EndpointResolver.isWindows();
             Map<String, String> env = System.getenv();
             List<String> directories = List.copyOf(searchDirectories);
-            return () -> TransportConnector.connect(EndpointResolver.resolve(windows, env, directories), windows);
+            int preferred = preferredIndex;
+            return () -> TransportConnector.connect(EndpointResolver.resolve(windows, env, directories, preferred), windows);
         }
 
     }
