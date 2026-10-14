@@ -44,7 +44,7 @@ repositories {
 }
 
 dependencies {
-    implementation("xyz.orbitary:perigee:0.0.1")
+    implementation("xyz.orbitary:perigee:0.0.2")
 }
 ```
 
@@ -81,7 +81,7 @@ dependencies {
 <dependency>
     <groupId>xyz.orbitary</groupId>
     <artifactId>perigee</artifactId>
-    <version>0.0.1</version>
+    <version>0.0.2</version>
 </dependency>
 </dependencies>
 ```
