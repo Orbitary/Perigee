@@ -29,13 +29,7 @@ final class Validation {
      * Trims the value; blank becomes {@code null}.
      */
     static @Nullable String text(String field, @Nullable String value) {
-        String text = blankToNull(value);
-        if (text == null) return null;
-        int length = length(text);
-        if (length < MIN_TEXT || length > MAX_TEXT) {
-            throw new IllegalArgumentException(field + " must be " + MIN_TEXT + "-" + MAX_TEXT + " characters, was " + length);
-        }
-        return text;
+        return bounded(field, value, MIN_TEXT, MAX_TEXT);
     }
 
     /**
@@ -57,7 +51,7 @@ final class Validation {
         if (isHttp(image)) {
             requireHttpUrl(field, image);
         } else if (image.startsWith(MEDIA_PROXY_PREFIX)) {
-            requireMaxLength(field, image);
+            bounded(field, image, 1, MAX_URL);
         } else {
             return text(field, image);
         }
@@ -65,18 +59,12 @@ final class Validation {
     }
 
     static @Nullable String maxLength(String field, @Nullable String value, int max) {
-        String text = blankToNull(value);
-        if (text == null) return null;
-        int length = length(text);
-        if (length > max) throw new IllegalArgumentException(field + " must be at most " + max + " characters, was " + length);
-        return text;
+        return bounded(field, value, 1, max);
     }
 
     static String requireText(String field, @Nullable String value, int max) {
-        String text = blankToNull(value);
+        String text = bounded(field, value, 1, max);
         if (text == null) throw new IllegalArgumentException(field + " must not be blank");
-        int length = length(text);
-        if (length > max) throw new IllegalArgumentException(field + " must be 1-" + max + " characters, was " + length);
         return text;
     }
 
@@ -85,6 +73,16 @@ final class Validation {
         if (url == null) throw new IllegalArgumentException(field + " must not be blank");
         requireHttpUrl(field, url);
         return url;
+    }
+
+    private static @Nullable String bounded(String field, @Nullable String value, int min, int max) {
+        String text = blankToNull(value);
+        if (text == null) return null;
+        int length = length(text);
+        if (length < min || length > max) {
+            throw new IllegalArgumentException(field + " must be " + min + "-" + max + " characters, was " + length);
+        }
+        return text;
     }
 
     private static @Nullable String blankToNull(@Nullable String value) {
@@ -101,13 +99,8 @@ final class Validation {
         return value.regionMatches(true, 0, "http://", 0, 7) || value.regionMatches(true, 0, "https://", 0, 8);
     }
 
-    private static void requireMaxLength(String field, String value) {
-        int length = length(value);
-        if (length > MAX_URL) throw new IllegalArgumentException(field + " must be at most " + MAX_URL + " characters, was " + length);
-    }
-
     private static void requireHttpUrl(String field, String value) {
-        requireMaxLength(field, value);
+        bounded(field, value, 1, MAX_URL);
         URI uri;
         try {
             uri = new URI(value);
