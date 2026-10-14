@@ -63,6 +63,7 @@ class ActivityPayloadTest {
     @Test
     void everyActivityTypeWritesItsId() {
         for (ActivityType type : ActivityType.values()) {
+            if (type == ActivityType.CUSTOM) continue;
             assertEquals("{\"type\":" + type.id() + "}", json(Activity.of(a -> a.type(type))), type.name());
         }
     }
@@ -91,12 +92,12 @@ class ActivityPayloadTest {
     @Test
     void everyAssetKeyUsesDiscordsFieldName() {
         Activity activity = Activity.of(a -> a
-          .largeImage("li", "lt").largeUrl("lu")
-          .smallImage("si", "st").smallUrl("su")
+          .largeImage("li", "lt").largeUrl("https://lu")
+          .smallImage("si", "st").smallUrl("https://su")
           .inviteCoverImage("ic"));
 
         assertEquals(
-          "{\"type\":0,\"assets\":{\"large_image\":\"li\",\"large_text\":\"lt\",\"large_url\":\"lu\",\"small_image\":\"si\",\"small_text\":\"st\",\"small_url\":\"su\",\"invite_cover_image\":\"ic\"}}",
+          "{\"type\":0,\"assets\":{\"large_image\":\"li\",\"large_text\":\"lt\",\"large_url\":\"https://lu\",\"small_image\":\"si\",\"small_text\":\"st\",\"small_url\":\"https://su\",\"invite_cover_image\":\"ic\"}}",
           json(activity)
         );
     }
@@ -109,10 +110,10 @@ class ActivityPayloadTest {
 
     @Test
     void linkFieldsUseDiscordsNames() {
-        Activity activity = Activity.of(a -> a.type(ActivityType.STREAMING).url("https://twitch.tv/x").details("d").detailsUrl("https://d").state("s").stateUrl("https://s"));
+        Activity activity = Activity.of(a -> a.type(ActivityType.STREAMING).url("https://twitch.tv/x").details("dd").detailsUrl("https://d").state("ss").stateUrl("https://s"));
 
         assertEquals(
-          "{\"type\":1,\"url\":\"https://twitch.tv/x\",\"details\":\"d\",\"details_url\":\"https://d\",\"state\":\"s\",\"state_url\":\"https://s\"}",
+          "{\"type\":1,\"url\":\"https://twitch.tv/x\",\"details\":\"dd\",\"details_url\":\"https://d\",\"state\":\"ss\",\"state_url\":\"https://s\"}",
           json(activity)
         );
     }
@@ -135,8 +136,8 @@ class ActivityPayloadTest {
     }
 
     @Test
-    void emptyStringsAreKeptBecauseTheyAreSetValues() {
-        assertEquals("{\"type\":0,\"details\":\"\"}", json(Activity.of(a -> a.details(""))));
+    void blankStringsAreLeftOut() {
+        assertEquals("{\"type\":0}", json(Activity.of(a -> a.details("").state("  "))));
     }
 
     @Test

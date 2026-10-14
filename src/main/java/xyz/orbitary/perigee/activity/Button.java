@@ -18,8 +18,8 @@ public record Button(
     public static final int MAX_URL = 512;
 
     public Button {
-        if (label.isEmpty() || label.length() > MAX_LABEL) throw new IllegalArgumentException("button label must be 1-" + MAX_LABEL + " characters");
-        if (url.isEmpty() || url.length() > MAX_URL) throw new IllegalArgumentException("button url must be 1-" + MAX_URL + " characters");
+        label = Validation.requireText("button label", label, MAX_LABEL);
+        url = Validation.requireUrl("button url", url);
     }
 
 }

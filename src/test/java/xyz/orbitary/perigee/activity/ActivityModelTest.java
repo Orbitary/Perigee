@@ -78,11 +78,12 @@ class ActivityModelTest {
     @Test
     void allowsExactlyTwoButtonsAtTheirLengthLimits() {
         String label = "l".repeat(Button.MAX_LABEL);
-        String url = "u".repeat(Button.MAX_URL);
+        String url = "https://example.com/" + "u".repeat(Button.MAX_URL - "https://example.com/".length());
 
         Activity activity = Activity.of(a -> a.button(label, url).button("second", "https://example.com"));
 
         assertEquals(2, activity.buttons().size());
+        assertThrows(IllegalArgumentException.class, () -> Activity.of(a -> a.button(label, url).button("second", "https://example.com").button("third", "https://example.com")));
         assertThrows(IllegalArgumentException.class, () -> new Button(label + "x", url));
         assertThrows(IllegalArgumentException.class, () -> new Button(label, url + "x"));
         assertThrows(IllegalArgumentException.class, () -> new Button("label", ""));

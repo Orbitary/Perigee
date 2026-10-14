@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -41,6 +42,19 @@ public record Activity(
     public static final int MAX_BUTTONS = 2;
 
     public Activity {
+        Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(assets, "assets");
+        Objects.requireNonNull(secrets, "secrets");
+        Objects.requireNonNull(buttons, "buttons");
+        Objects.requireNonNull(flags, "flags");
+        if (type == ActivityType.CUSTOM) throw new IllegalArgumentException("CUSTOM activities are not supported over IPC");
+        name = Validation.text("name", name);
+        details = Validation.text("details", details);
+        state = Validation.text("state", state);
+        detailsUrl = Validation.url("details url", detailsUrl);
+        stateUrl = Validation.url("state url", stateUrl);
+        url = Validation.url("url", url);
+        if (url != null && type != ActivityType.STREAMING) throw new IllegalArgumentException("url is only valid for STREAMING activities");
         if (buttons.size() > MAX_BUTTONS) throw new IllegalArgumentException("at most " + MAX_BUTTONS + " buttons are allowed");
         buttons = List.copyOf(buttons);
         flags = flags.isEmpty() ? Set.of() : Collections.unmodifiableSet(EnumSet.copyOf(flags));
@@ -196,7 +210,8 @@ public record Activity(
         }
 
         public Builder button(Button button) {
-            this.buttons.add(button);
+            if (buttons.size() >= MAX_BUTTONS) throw new IllegalArgumentException("at most " + MAX_BUTTONS + " buttons are allowed");
+            this.buttons.add(Objects.requireNonNull(button, "button"));
             return this;
         }
 

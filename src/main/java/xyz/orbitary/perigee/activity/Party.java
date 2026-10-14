@@ -18,7 +18,10 @@ public record Party(
   int size,
   int max
 ) {
+    public static final int MAX_ID = 128;
+
     public Party {
+        id = Validation.maxLength("party id", id, MAX_ID);
         if (size < 0 || max < 0) throw new IllegalArgumentException("party sizes must not be negative");
         if (max > 0 && size > max) throw new IllegalArgumentException("party size " + size + " exceeds max " + max);
         if (max == 0 && size != 0) throw new IllegalArgumentException("party size requires a max");

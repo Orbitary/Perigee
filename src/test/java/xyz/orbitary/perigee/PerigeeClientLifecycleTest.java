@@ -120,7 +120,7 @@ class PerigeeClientLifecycleTest extends ClientTestBase {
         Thread.sleep(150);
         assertEquals(1, discord.sessions.get(), "must not reconnect");
         assertFalse(client.isConnected());
-        assertInstanceOf(PerigeeException.class, failureOf(client.setActivity(a -> a.details("x"))));
+        assertInstanceOf(PerigeeException.class, failureOf(client.setActivity(a -> a.details("ok"))));
     }
 
 }

@@ -19,7 +19,7 @@ public enum ActivityType {
     LISTENING(2, true),
     WATCHING(3, true),
     /**
-     * Gateway-only; local IPC clients may be rejected by Discord.
+     * Gateway-only; {@link Activity} rejects it.
      */
     CUSTOM(4, false),
     COMPETING(5, true);

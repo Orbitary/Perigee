@@ -11,7 +11,7 @@ import org.jetbrains.annotations.Nullable;
 
 
 /**
- * Image fields take an uploaded asset key or a public image URL, which Discord proxies.
+ * Image fields take an uploaded asset key, a public {@code http(s)} image URL, which Discord proxies, or an {@code mp:} media proxy path. They are sent as given.
  */
 public record Assets(
   @Nullable String largeImage,
@@ -23,6 +23,16 @@ public record Assets(
   @Nullable String inviteCoverImage
 ) {
     public static final Assets EMPTY = new Assets(null, null, null, null, null, null, null);
+
+    public Assets {
+        largeImage = Validation.image("large image", largeImage);
+        largeText = Validation.text("large text", largeText);
+        largeUrl = Validation.url("large url", largeUrl);
+        smallImage = Validation.image("small image", smallImage);
+        smallText = Validation.text("small text", smallText);
+        smallUrl = Validation.url("small url", smallUrl);
+        inviteCoverImage = Validation.image("invite cover image", inviteCoverImage);
+    }
 
     public Assets withLarge(String image, @Nullable String text) {
         return new Assets(image, text, largeUrl, smallImage, smallText, smallUrl, inviteCoverImage);
