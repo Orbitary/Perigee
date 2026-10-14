@@ -5,9 +5,9 @@
 *- Discord Rich Presence Client for Java -*
 
 [![](https://img.shields.io/github/license/Orbitary/Perigee?style=flat-square)](LICENSE)
+[![](https://img.shields.io/maven-metadata/v?metadataUrl=https%3A%2F%2Frepo.bitsquidd.xyz%2Frepository%2Fbit%2Fxyz%2Forbitary%2Fperigee%2Fmaven-metadata.xml&label=version&style=flat-square)](#-installation)
 [![](https://img.shields.io/github/actions/workflow/status/Orbitary/Perigee/publish.yml?style=flat-square)](https://github.com/Orbitary/Perigee/actions/workflows/publish.yml)
 [![](https://img.shields.io/badge/java-21%2B-orange?style=flat-square)](#-requirements)
-[![](https://img.shields.io/badge/dependencies-0-brightgreen?style=flat-square)](#-installation)
 
 </div>
 
@@ -15,12 +15,15 @@
 
 # ✨ Introduction
 
-**Perigee** is a pure-Java client for [Discord Rich Presence](https://docs.discord.com/developers/rich-presence/overview)
+**Perigee** is a pure-Java library for [Discord Rich Presence](https://docs.discord.com/developers/rich-presence/overview).
 
 - **Lean:** Zero dependencies, built-in parsing, no native libraries
 - **Async by default:** Every call returns a `CompletableFuture`
 - **Self-healing:** Reconnects with backoff and resends your presence when Discord restarts
 - **Modern:** Uses Discord's [Social SDK](https://docs.discord.com/developers/discord-social-sdk/overview) protocol, unlike similar clients
+- **Cross-platform:** Windows named pipes, Unix sockets, and Flatpak and Snap Discord installs
+
+> Discord's own [Social SDK](https://docs.discord.com/developers/discord-social-sdk/overview) is recommended for new native games, but it ships only for C++, Unity and Unreal.
 
 
 ## 🔌 Requirements
@@ -93,7 +96,7 @@ dependencies {
 ```java
 PerigeeClient client = PerigeeClient.builder("123456789012345678").build();
 
-client.on(Ready.class, ready -> Logger.info("Connected as " + ready.user().username()));
+client.on(Ready.class, ready -> System.out.println("Connected as " + ready.user().username()));
 
 client.connect();
 
@@ -130,7 +133,7 @@ client.setActivity(activity);
 ```
 
 - Unset fields are left out of what Discord receives.
-- Discord documents are validated before sending.
+- The limits Discord documents (two buttons, button label and URL lengths, party sizes) are validated before sending.
 
 
 ### Updating and clearing
@@ -143,17 +146,19 @@ client.setActivity(a -> a
 client.clearActivity();
 ```
 
+- Only the newest update is sent when you exceed Discord's rate limit; every update it replaced completes together with it.
+
 
 ## Events
 
 ```java
-client.on(Ready.class, event -> Logger.info("Hello " + event.user().username()));
-client.on(Disconnected.class, event -> Logger.info("Lost Discord, reconnecting: " + event.reconnecting()));
+client.on(Ready.class,        event -> System.out.println("Hello " + event.user().username()));
+client.on(Disconnected.class, event -> System.out.println("Lost Discord, reconnecting: " + event.reconnecting()));
 
-client.on(Join.class, event -> teleportToLobby(event.secret()));
-client.on(Spectate.class, event -> spectate(event.secret()));
+client.on(Join.class,         event -> teleportToLobby(event.secret()));
+client.on(Spectate.class,     event -> spectate(event.secret()));
 
-client.on(JoinRequest.class, event -> {
+client.on(JoinRequest.class,  event -> {
     if (lobbyHasSpace()) client.acceptJoinRequest(event.user().id());
     else client.rejectJoinRequest(event.user().id());
 });
