@@ -48,6 +48,8 @@ final class FakeDiscord implements AutoCloseable {
     volatile boolean rejectHandshake;
     volatile boolean fragmentWrites;
     volatile int silentSessions;
+    volatile int rejectedSessions;
+    volatile int handshakeCloseCode = 4000;
     volatile Responder responder = (session, command) -> Payloads.ok(command);
 
     private final UnixTestServer server;
@@ -120,8 +122,8 @@ final class FakeDiscord implements AutoCloseable {
             current = channel;
             Frame handshake = FrameCodec.decode(in);
             handshakes.add(handshake.payload());
-            if (rejectHandshake) {
-                send(channel, FrameCodec.encode(Opcode.CLOSE, Payloads.close(4000, "Invalid Client ID")));
+            if (rejectHandshake || session <= rejectedSessions) {
+                send(channel, FrameCodec.encode(Opcode.CLOSE, Payloads.close(handshakeCloseCode, "Invalid Client ID")));
                 return;
             }
             if (session > silentSessions) send(channel, FrameCodec.encode(Opcode.FRAME, Payloads.READY));

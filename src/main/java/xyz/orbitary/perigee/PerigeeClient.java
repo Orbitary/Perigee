@@ -85,6 +85,7 @@ public final class PerigeeClient implements AutoCloseable {
     private boolean ready;
     private boolean everReady;
     private int attempts;
+    private boolean outageLogged;
 
     private final Connection.Listener listener = new Connection.Listener() {
         @Override
@@ -240,6 +241,7 @@ public final class PerigeeClient implements AutoCloseable {
             ready = true;
             everReady = true;
             attempts = 0;
+            outageLogged = false;
             current = connection;
         }
         presence.setOnline(true);
@@ -270,19 +272,33 @@ public final class PerigeeClient implements AutoCloseable {
         boolean stop;
         boolean fatal;
         boolean retry;
+        boolean logOutage = false;
         long delay = 0;
         synchronized (lock) {
             connection = null;
             wasReady = ready;
             ready = false;
             stop = closed;
-            fatal = !everReady && cause instanceof RpcException;
+            fatal = !everReady && cause instanceof RpcException rpc && rpc.isFatal();
             retry = !stop && !fatal && autoReconnect;
-            if (retry) delay = backoff(attempts++);
+            if (retry) {
+                int attempt = attempts++;
+                delay = cause instanceof RpcException rpc && rpc.isRateLimited() ? maxDelay.toMillis() : backoff(attempt);
+                logOutage = !outageLogged;
+                outageLogged = true;
+            }
         }
         presence.setOnline(false);
         if (stop) return;
         if (wasReady) fire(new Disconnected(cause, retry));
+        if (fatal && cause != null) Logger.warn("Discord rejected the connection and Perigee will not retry: {0}", String.valueOf(cause.getMessage()));
+        if (logOutage) {
+            if (wasReady) {
+                Logger.warn("Lost the connection to Discord ({0}); retrying in the background", cause == null ? "closed" : String.valueOf(cause.getMessage()));
+            } else {
+                Logger.debug("Discord is not reachable; retrying in the background");
+            }
+        }
         if (retry) {
             scheduler.schedule(this::attempt, delay, TimeUnit.MILLISECONDS);
             return;
