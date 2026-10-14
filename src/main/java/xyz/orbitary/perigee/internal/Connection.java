@@ -82,12 +82,12 @@ public final class Connection {
         transport.write(FrameCodec.encode(Opcode.HANDSHAKE, Requests.handshake(clientId)));
         Thread thread = Thread.ofPlatform().daemon().name("perigee-reader").unstarted(this::readLoop);
         reader = thread;
-        thread.start();
         readyTimeout = timer.schedule(
           () -> abort(new PerigeeTimeoutException("Discord did not send READY within " + timeouts.ready())),
           timeouts.ready().toMillis(),
           TimeUnit.MILLISECONDS
         );
+        thread.start();
     }
 
     public CompletableFuture<RpcMessage> request(String cmd, Map<String, Object> args) {
