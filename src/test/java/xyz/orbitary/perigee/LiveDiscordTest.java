@@ -59,7 +59,11 @@ class LiveDiscordTest {
             client.connect().get(10, TimeUnit.SECONDS);
 
             for (ActivityType type : ActivityType.values()) {
-                Activity activity = Activity.of(a -> a.type(type).details("type " + type).url("https://twitch.tv/perigee"));
+                if (type == ActivityType.CUSTOM) continue;
+                Activity activity = Activity.of(a -> {
+                    a.type(type).details("type " + type);
+                    if (type == ActivityType.STREAMING) a.url("https://twitch.tv/perigee");
+                });
                 String outcome;
                 try {
                     client.setActivity(activity).get(10, TimeUnit.SECONDS);

@@ -1,0 +1,5 @@
+{
+  "cmd": "SET_ACTIVITY",
+  "args": {"pid": 0},
+  "nonce": "<nonce>"
+}

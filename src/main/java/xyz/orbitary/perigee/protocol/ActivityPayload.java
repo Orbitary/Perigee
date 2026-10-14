@@ -26,7 +26,7 @@ import java.util.Map;
 /**
  * Maps an {@link Activity} to the JSON object Discord expects, leaving out unset fields.
  * <p>
- * IPC takes timestamps in Unix seconds, as in the Social SDK guide; the gateway activity object documents milliseconds.
+ * Timestamps are written as whole Unix seconds. The unit is pinned by golden tests and checked against a real client by {@code LiveDiscordTest}.
  */
 public final class ActivityPayload {
     private ActivityPayload() {}

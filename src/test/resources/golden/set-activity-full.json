@@ -1,0 +1,34 @@
+{
+  "cmd": "SET_ACTIVITY",
+  "args": {
+    "pid": 0,
+    "activity": {
+      "name": "Perigee Demo",
+      "type": 2,
+      "details": "Ranked",
+      "details_url": "https://example.com/details",
+      "state": "In a party",
+      "state_url": "https://example.com/state",
+      "status_display_type": 2,
+      "timestamps": {"start": 1700000000, "end": 1700003600},
+      "party": {"id": "lobby-42", "size": [2, 4]},
+      "assets": {
+        "large_image": "logo",
+        "large_text": "Logo text",
+        "large_url": "https://example.com/large",
+        "small_image": "rank",
+        "small_text": "Gold II",
+        "small_url": "https://example.com/small",
+        "invite_cover_image": "cover"
+      },
+      "secrets": {"join": "join-secret", "spectate": "spectate-secret", "match": "match-secret"},
+      "buttons": [
+        {"label": "Docs", "url": "https://example.com/docs"},
+        {"label": "Repo", "url": "https://example.com/repo"}
+      ],
+      "instance": true,
+      "flags": 6
+    }
+  },
+  "nonce": "<nonce>"
+}
