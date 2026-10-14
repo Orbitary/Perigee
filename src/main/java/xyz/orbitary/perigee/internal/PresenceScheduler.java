@@ -8,6 +8,7 @@
 package xyz.orbitary.perigee.internal;
 
 import org.jetbrains.annotations.Nullable;
+import xyz.orbitary.perigee.Logger;
 import xyz.orbitary.perigee.PerigeeException;
 import xyz.orbitary.perigee.RpcException;
 import xyz.orbitary.perigee.activity.Activity;
@@ -45,6 +46,7 @@ public final class PresenceScheduler {
     private final ArrayDeque<Long> sent = new ArrayDeque<>();
     private final List<CompletableFuture<@Nullable Void>> waiters = new ArrayList<>();
     private @Nullable Activity latest;
+    private @Nullable Activity accepted;
     private boolean dirty;
     private boolean online;
     private boolean closed;
@@ -122,16 +124,22 @@ public final class PresenceScheduler {
         }
         result.whenComplete((ignored, error) -> {
             if (error == null) {
-                batch.forEach(f -> f.complete(null));
+                onSuccess(activity, batch);
             } else {
                 onFailure(activity, batch, error instanceof CompletionException && error.getCause() != null ? error.getCause() : error);
             }
         });
     }
 
+    private synchronized void onSuccess(@Nullable Activity activity, List<? extends CompletableFuture<@Nullable Void>> batch) {
+        accepted = activity;
+        batch.forEach(f -> f.complete(null));
+    }
+
     private synchronized void onFailure(@Nullable Activity activity, List<? extends CompletableFuture<@Nullable Void>> batch, Throwable error) {
         if (error instanceof RpcException || closed) {
-            if (latest == activity) latest = null;
+            if (error instanceof RpcException) Logger.warn("Discord rejected a presence update: {0}", String.valueOf(error.getMessage()));
+            if (latest == activity) latest = accepted;
             batch.forEach(f -> f.completeExceptionally(error));
             return;
         }

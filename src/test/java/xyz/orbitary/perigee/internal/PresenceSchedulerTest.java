@@ -30,6 +30,8 @@ import static xyz.orbitary.perigee.support.Tests.failureOf;
 
 
 class PresenceSchedulerTest {
+    private static final String PREFIX = "d-";
+
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private final List<String> sent = Collections.synchronizedList(new ArrayList<>());
     private final AtomicInteger failuresLeft = new AtomicInteger();
@@ -40,14 +42,14 @@ class PresenceSchedulerTest {
     }
 
     private CompletableFuture<@Nullable Void> send(@Nullable Activity activity) {
-        sent.add(activity == null ? "clear" : String.valueOf(activity.details()));
+        sent.add(activity == null ? "clear" : String.valueOf(activity.details()).substring(PREFIX.length()));
         if (discordRejects) return CompletableFuture.failedFuture(new RpcException(4000, "rejected"));
         if (failuresLeft.getAndUpdate(n -> Math.max(0, n - 1)) > 0) return CompletableFuture.failedFuture(new PerigeeException("connection lost"));
         return CompletableFuture.completedFuture(null);
     }
 
-    private static Activity activity(String details) {
-        return Activity.of(a -> a.details(details));
+    private static Activity activity(String label) {
+        return Activity.of(a -> a.details(PREFIX + label));
     }
 
     @AfterEach
@@ -198,6 +200,36 @@ class PresenceSchedulerTest {
 
         assertEquals(4000, assertInstanceOf(RpcException.class, failure).code());
         assertEquals(List.of("bad"), sent, "a rejected update must not be resent");
+    }
+
+    @Test
+    void oneRejectedUpdateDoesNotBlockLaterValidOnes() throws Exception {
+        PresenceScheduler scheduler = scheduler(5, 1_000);
+        scheduler.setOnline(true);
+        await(scheduler.submit(activity("good")));
+
+        discordRejects = true;
+        assertInstanceOf(RpcException.class, failureOf(scheduler.submit(activity("bad"))));
+        discordRejects = false;
+        await(scheduler.submit(activity("later")));
+
+        assertEquals(List.of("good", "bad", "later"), sent);
+    }
+
+    @Test
+    void aRejectedUpdateIsNotReplayedButTheLastAcceptedOneIs() throws Exception {
+        PresenceScheduler scheduler = scheduler(5, 1_000);
+        scheduler.setOnline(true);
+        await(scheduler.submit(activity("good")));
+        discordRejects = true;
+        failureOf(scheduler.submit(activity("bad")));
+        discordRejects = false;
+
+        scheduler.setOnline(false);
+        scheduler.setOnline(true);
+        Thread.sleep(150);
+
+        assertEquals(List.of("good", "bad", "good"), sent);
     }
 
     @Test
