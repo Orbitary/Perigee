@@ -38,6 +38,11 @@ tasks.test {
     useJUnitPlatform()
 }
 
+// Shadow wires itself into assemble; with nothing to shade it only duplicates the jar, and the release workflow would upload both
+tasks.shadowJar {
+    enabled = false
+}
+
 publishing {
     publications.withType<MavenPublication>().configureEach {
         pom {
