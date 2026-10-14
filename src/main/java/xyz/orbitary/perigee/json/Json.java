@@ -14,6 +14,8 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+
 
 /**
  * Minimal JSON reader and writer for the Discord protocol.
@@ -35,16 +37,16 @@ public final class Json {
     }
 
     /**
-     * Parses a complete JSON document.
+     * Parses a complete JSON document. A top-level {@code null} gives an empty result.
      *
      * @throws JsonException if the input is malformed
      */
-    public static @Nullable Object parse(CharSequence text) {
+    public static Optional<Object> parse(CharSequence text) {
         Parser parser = new Parser(text);
         Object value = parser.value(0);
         parser.skipWhitespace();
         if (!parser.atEnd()) throw parser.error("Trailing content");
-        return value;
+        return Optional.ofNullable(value);
     }
 
     private static void write(@Nullable Object value, StringBuilder out) {
@@ -100,8 +102,11 @@ public final class Json {
                 case '\b' -> out.append("\\b");
                 case '\f' -> out.append("\\f");
                 default -> {
-                    if (c < 0x20) out.append(String.format("\\u%04x", (int) c));
-                    else out.append(c);
+                    if (c < 0x20) {
+                        out.append(String.format("\\u%04x", (int)c));
+                    } else {
+                        out.append(c);
+                    }
                 }
             }
         }
@@ -127,8 +132,11 @@ public final class Json {
         void skipWhitespace() {
             while (!atEnd()) {
                 char c = text.charAt(pos);
-                if (c == ' ' || c == '\t' || c == '\n' || c == '\r') pos++;
-                else break;
+                if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+                    pos++;
+                } else {
+                    break;
+                }
             }
         }
 
@@ -226,7 +234,7 @@ public final class Json {
                     case 'u' -> {
                         if (pos + 4 > text.length()) throw error("Truncated unicode escape");
                         try {
-                            sb.append((char) Integer.parseInt(text.subSequence(pos, pos + 4).toString(), 16));
+                            sb.append((char)Integer.parseInt(text.subSequence(pos, pos + 4).toString(), 16));
                         } catch (NumberFormatException ex) {
                             throw error("Invalid unicode escape");
                         }
@@ -243,15 +251,18 @@ public final class Json {
             if (peek('-')) pos++;
             while (!atEnd()) {
                 char c = text.charAt(pos);
-                if (c >= '0' && c <= '9') pos++;
-                else if (c == '.' || c == 'e' || c == 'E' || c == '+' || c == '-') {
+                if (c >= '0' && c <= '9') {
+                    pos++;
+                } else if (c == '.' || c == 'e' || c == 'E' || c == '+' || c == '-') {
                     integral = false;
                     pos++;
-                } else break;
+                } else {
+                    break;
+                }
             }
             String token = text.subSequence(start, pos).toString();
             try {
-                return integral ? (Number) Long.parseLong(token) : (Number) Double.parseDouble(token);
+                return integral ? (Number)Long.parseLong(token) : (Number)Double.parseDouble(token);
             } catch (NumberFormatException e) {
                 pos = start;
                 throw error("Invalid number");
@@ -266,5 +277,7 @@ public final class Json {
             if (!peek(c)) throw error("Expected '" + c + "'");
             pos++;
         }
+
     }
+
 }

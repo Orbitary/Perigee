@@ -9,6 +9,7 @@ package xyz.orbitary.perigee.activity;
 
 import java.util.Set;
 
+
 public enum ActivityFlag {
     INSTANCE(0),
     JOIN(1),
@@ -32,7 +33,9 @@ public enum ActivityFlag {
 
     public static int toBits(Set<ActivityFlag> flags) {
         int bits = 0;
-        for (ActivityFlag flag : flags) bits |= flag.mask;
+        for (ActivityFlag flag : flags) {
+            bits |= flag.mask;
+        }
         return bits;
     }
 }

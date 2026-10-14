@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+
 /**
  * Maps an {@link Activity} to the JSON object Discord expects, leaving out unset fields.
  * <p>
@@ -40,8 +41,8 @@ public final class ActivityPayload {
         put(map, "state", activity.state());
         put(map, "state_url", activity.stateUrl());
         if (activity.statusDisplayType() != null) map.put("status_display_type", activity.statusDisplayType().id());
-        putIfPresent(map, "timestamps", timestamps(activity.timestamps()));
-        putIfPresent(map, "party", party(activity.party()));
+        if (activity.timestamps() != null) putIfPresent(map, "timestamps", timestamps(activity.timestamps()));
+        if (activity.party() != null) putIfPresent(map, "party", party(activity.party()));
         putIfPresent(map, "assets", assets(activity.assets()));
         putIfPresent(map, "secrets", secrets(activity.secrets()));
         if (!activity.buttons().isEmpty()) map.put("buttons", buttons(activity.buttons()));
@@ -50,16 +51,14 @@ public final class ActivityPayload {
         return map;
     }
 
-    private static @Nullable Map<String, Object> timestamps(@Nullable Timestamps timestamps) {
-        if (timestamps == null) return null;
+    private static Map<String, Object> timestamps(Timestamps timestamps) {
         Map<String, Object> map = new LinkedHashMap<>();
         putSeconds(map, "start", timestamps.start());
         putSeconds(map, "end", timestamps.end());
         return map;
     }
 
-    private static @Nullable Map<String, Object> party(@Nullable Party party) {
-        if (party == null) return null;
+    private static Map<String, Object> party(Party party) {
         Map<String, Object> map = new LinkedHashMap<>();
         put(map, "id", party.id());
         if (party.hasSize()) map.put("size", List.of(party.size(), party.max()));
@@ -105,7 +104,8 @@ public final class ActivityPayload {
         if (value != null) map.put(key, value);
     }
 
-    private static void putIfPresent(Map<String, Object> map, String key, @Nullable Map<String, Object> value) {
-        if (value != null && !value.isEmpty()) map.put(key, value);
+    private static void putIfPresent(Map<String, Object> map, String key, Map<String, Object> value) {
+        if (!value.isEmpty()) map.put(key, value);
     }
+
 }

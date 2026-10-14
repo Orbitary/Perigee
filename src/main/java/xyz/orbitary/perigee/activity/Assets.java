@@ -9,17 +9,18 @@ package xyz.orbitary.perigee.activity;
 
 import org.jetbrains.annotations.Nullable;
 
+
 /**
  * Image fields take an uploaded asset key or a public image URL, which Discord proxies.
  */
 public record Assets(
-        @Nullable String largeImage,
-        @Nullable String largeText,
-        @Nullable String largeUrl,
-        @Nullable String smallImage,
-        @Nullable String smallText,
-        @Nullable String smallUrl,
-        @Nullable String inviteCoverImage
+  @Nullable String largeImage,
+  @Nullable String largeText,
+  @Nullable String largeUrl,
+  @Nullable String smallImage,
+  @Nullable String smallText,
+  @Nullable String smallUrl,
+  @Nullable String inviteCoverImage
 ) {
     public static final Assets EMPTY = new Assets(null, null, null, null, null, null, null);
 
@@ -42,4 +43,5 @@ public record Assets(
     public Assets withInviteCoverImage(String image) {
         return new Assets(largeImage, largeText, largeUrl, smallImage, smallText, smallUrl, image);
     }
+
 }

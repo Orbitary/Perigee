@@ -12,11 +12,15 @@ package xyz.orbitary.perigee.activity;
  */
 public enum ActivityType {
     PLAYING(0, true),
-    /** Gateway-only; local IPC clients may be rejected by Discord. */
+    /**
+     * Gateway-only; local IPC clients may be rejected by Discord.
+     */
     STREAMING(1, false),
     LISTENING(2, true),
     WATCHING(3, true),
-    /** Gateway-only; local IPC clients may be rejected by Discord. */
+    /**
+     * Gateway-only; local IPC clients may be rejected by Discord.
+     */
     CUSTOM(4, false),
     COMPETING(5, true);
 

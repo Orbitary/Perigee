@@ -10,4 +10,7 @@ package xyz.orbitary.perigee.protocol;
 /**
  * A single IPC message: an opcode and its JSON payload.
  */
-public record Frame(Opcode opcode, String payload) {}
+public record Frame(
+  Opcode opcode,
+  String payload
+) {}

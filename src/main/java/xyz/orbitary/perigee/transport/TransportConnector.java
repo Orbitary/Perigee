@@ -10,6 +10,7 @@ package xyz.orbitary.perigee.transport;
 import java.io.IOException;
 import java.util.List;
 
+
 /**
  * Opens the first reachable endpoint from a candidate list.
  */
@@ -31,4 +32,5 @@ public final class TransportConnector {
     public static Transport connect() throws IOException {
         return connect(EndpointResolver.resolve(), EndpointResolver.isWindows());
     }
+
 }

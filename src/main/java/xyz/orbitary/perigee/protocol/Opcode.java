@@ -7,7 +7,8 @@
 
 package xyz.orbitary.perigee.protocol;
 
-import org.jetbrains.annotations.Nullable;
+import java.util.Optional;
+
 
 /**
  * IPC frame opcodes.
@@ -31,7 +32,7 @@ public enum Opcode {
         return code;
     }
 
-    public static @Nullable Opcode fromCode(int code) {
-        return code >= 0 && code < BY_CODE.length ? BY_CODE[code] : null;
+    public static Optional<Opcode> fromCode(int code) {
+        return code >= 0 && code < BY_CODE.length ? Optional.of(BY_CODE[code]) : Optional.empty();
     }
 }

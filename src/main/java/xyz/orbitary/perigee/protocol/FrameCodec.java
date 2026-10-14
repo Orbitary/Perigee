@@ -14,6 +14,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 
+
 /**
  * Encodes and decodes IPC frames:
  * - Two unsigned 32-bit integers (opcode, length)
@@ -28,11 +29,11 @@ public final class FrameCodec {
     public static byte[] encode(Opcode opcode, String payload) {
         byte[] body = payload.getBytes(StandardCharsets.UTF_8);
         return ByteBuffer.allocate(HEADER_SIZE + body.length)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .putInt(opcode.code())
-                .putInt(body.length)
-                .put(body)
-                .array();
+          .order(ByteOrder.LITTLE_ENDIAN)
+          .putInt(opcode.code())
+          .putInt(body.length)
+          .put(body)
+          .array();
     }
 
     /**
@@ -45,8 +46,7 @@ public final class FrameCodec {
         ByteBuffer header = ByteBuffer.wrap(readFully(in, HEADER_SIZE)).order(ByteOrder.LITTLE_ENDIAN);
         int code = header.getInt();
         int length = header.getInt();
-        Opcode opcode = Opcode.fromCode(code);
-        if (opcode == null) throw new IOException("Unknown opcode " + code);
+        Opcode opcode = Opcode.fromCode(code).orElseThrow(() -> new IOException("Unknown opcode " + code));
         if (length < 0 || length > MAX_PAYLOAD) throw new IOException("Invalid payload length " + length);
         return new Frame(opcode, new String(readFully(in, length), StandardCharsets.UTF_8));
     }
@@ -61,4 +61,5 @@ public final class FrameCodec {
         }
         return buffer;
     }
+
 }

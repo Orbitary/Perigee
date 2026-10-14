@@ -15,6 +15,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.SocketChannel;
 
+
 /**
  * Unix domain socket transport for Linux, macOS and Windows hosts that expose sockets.
  */
@@ -46,11 +47,14 @@ public final class UnixSocketTransport implements Transport {
     @Override
     public synchronized void write(byte[] frame) throws IOException {
         ByteBuffer buffer = ByteBuffer.wrap(frame);
-        while (buffer.hasRemaining()) channel.write(buffer);
+        while (buffer.hasRemaining()) {
+            channel.write(buffer);
+        }
     }
 
     @Override
     public void close() throws IOException {
         channel.close();
     }
+
 }

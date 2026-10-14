@@ -17,25 +17,26 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 
+
 /**
  * An immutable Rich Presence payload. Unset fields are omitted from what Discord receives.
  */
 public record Activity(
-        @Nullable String name,
-        ActivityType type,
-        @Nullable String details,
-        @Nullable String detailsUrl,
-        @Nullable String state,
-        @Nullable String stateUrl,
-        @Nullable StatusDisplayType statusDisplayType,
-        @Nullable String url,
-        @Nullable Timestamps timestamps,
-        @Nullable Party party,
-        Assets assets,
-        Secrets secrets,
-        List<Button> buttons,
-        boolean instance,
-        Set<ActivityFlag> flags
+  @Nullable String name,
+  ActivityType type,
+  @Nullable String details,
+  @Nullable String detailsUrl,
+  @Nullable String state,
+  @Nullable String stateUrl,
+  @Nullable StatusDisplayType statusDisplayType,
+  @Nullable String url,
+  @Nullable Timestamps timestamps,
+  @Nullable Party party,
+  Assets assets,
+  Secrets secrets,
+  List<Button> buttons,
+  boolean instance,
+  Set<ActivityFlag> flags
 ) {
     public static final int MAX_BUTTONS = 2;
 
@@ -217,5 +218,7 @@ public record Activity(
         public Activity build() {
             return new Activity(name, type, details, detailsUrl, state, stateUrl, statusDisplayType, url, timestamps, party, assets, secrets, buttons, instance, flags);
         }
+
     }
+
 }

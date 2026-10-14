@@ -12,9 +12,9 @@ import org.junit.jupiter.api.Test;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class JsonTest {
@@ -39,16 +39,16 @@ class JsonTest {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("text", "h\u00e9llo \ud83d\ude00 \"q\"\n");
         map.put("list", List.of(1L, 2.5, false));
-        assertEquals(map, Json.parse(Json.write(map)));
+        assertEquals(map, Json.parse(Json.write(map)).orElseThrow());
     }
 
     @Test
     void parsesNumbersAndLiterals() {
-        assertEquals(-12L, Json.parse(" -12 "));
-        assertEquals(1.5e2, Json.parse("1.5e2"));
-        assertEquals(true, Json.parse("true"));
-        assertNull(Json.parse("null"));
-        assertEquals("\u00e9", Json.parse("\"\\u00e9\""));
+        assertEquals(Optional.of(-12L), Json.parse(" -12 "));
+        assertEquals(Optional.of(1.5e2), Json.parse("1.5e2"));
+        assertEquals(Optional.of(true), Json.parse("true"));
+        assertEquals(Optional.empty(), Json.parse("null"));
+        assertEquals(Optional.of("\u00e9"), Json.parse("\"\\u00e9\""));
     }
 
     @Test
