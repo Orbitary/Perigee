@@ -31,14 +31,13 @@ dependencies {
 
 tasks.withType<JavaCompile>().configureEach {
     options.release.set(21)
-    options.compilerArgs.addAll(listOf("-Xlint:all", "-parameters"))
+    options.compilerArgs.addAll(listOf("-Xlint:all,-exports", "-parameters"))
 }
 
 tasks.test {
     useJUnitPlatform()
 }
 
-// Shadow wires itself into assemble; with nothing to shade it only duplicates the jar, and the release workflow would upload both
 tasks.shadowJar {
     enabled = false
 }
