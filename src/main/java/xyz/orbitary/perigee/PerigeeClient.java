@@ -38,6 +38,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -70,6 +71,7 @@ public final class PerigeeClient implements AutoCloseable {
     private final Duration minDelay;
     private final Duration maxDelay;
     private final TransportOpener opener;
+    private final Connection.Timeouts timeouts;
     private final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(1, task -> Thread.ofPlatform().daemon().name("perigee-scheduler").unstarted(task));
     private final ExecutorService events = Executors.newSingleThreadExecutor(task -> Thread.ofPlatform().daemon().name("perigee-events").unstarted(task));
     private final PresenceScheduler presence = new PresenceScheduler(scheduler, this::sendActivity);
@@ -107,6 +109,7 @@ public final class PerigeeClient implements AutoCloseable {
         this.minDelay = builder.minDelay;
         this.maxDelay = builder.maxDelay;
         this.opener = builder.opener();
+        this.timeouts = builder.timeouts;
     }
 
     public static Builder builder(String applicationId) {
@@ -129,6 +132,32 @@ public final class PerigeeClient implements AutoCloseable {
             }
         }
         return connectFuture;
+    }
+
+    /**
+     * Like {@link #connect()}, but the returned future fails with a {@link PerigeeTimeoutException} if Discord is not ready in time.
+     * The client keeps trying in the background; call {@link #close()} to stop.
+     */
+    public CompletableFuture<DiscordUser> connect(Duration timeout) {
+        if (timeout.isNegative() || timeout.isZero()) throw new IllegalArgumentException("timeout must be positive");
+        CompletableFuture<DiscordUser> source = connect();
+        if (source.isDone()) return source;
+        CompletableFuture<DiscordUser> result = new CompletableFuture<>();
+        ScheduledFuture<?> expiry;
+        try {
+            expiry = scheduler.schedule(() -> result.completeExceptionally(new PerigeeTimeoutException("Discord was not ready within " + timeout)), timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (RejectedExecutionException e) {
+            return source;
+        }
+        source.whenComplete((user, error) -> {
+            expiry.cancel(false);
+            if (error == null) {
+                result.complete(user);
+            } else {
+                result.completeExceptionally(error);
+            }
+        });
+        return result;
     }
 
     public CompletableFuture<Void> setActivity(Activity activity) {
@@ -190,7 +219,7 @@ public final class PerigeeClient implements AutoCloseable {
         Connection created = null;
         try {
             Transport transport = opener.open();
-            created = new Connection(transport, listener);
+            created = new Connection(transport, listener, scheduler, timeouts);
             synchronized (lock) {
                 if (closed) {
                     created.close();
@@ -305,6 +334,7 @@ public final class PerigeeClient implements AutoCloseable {
         private Duration maxDelay = Duration.ofSeconds(30);
         private final List<String> searchDirectories = new ArrayList<>();
         private @Nullable TransportOpener opener;
+        private Connection.Timeouts timeouts = Connection.Timeouts.DEFAULT;
 
         private Builder(String applicationId) {
             if (applicationId.isEmpty() || !applicationId.chars().allMatch(Character::isDigit)) {
@@ -332,6 +362,11 @@ public final class PerigeeClient implements AutoCloseable {
 
         Builder transport(TransportOpener opener) {
             this.opener = opener;
+            return this;
+        }
+
+        Builder timeouts(Connection.Timeouts timeouts) {
+            this.timeouts = timeouts;
             return this;
         }
 

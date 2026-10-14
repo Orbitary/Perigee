@@ -10,6 +10,7 @@ package xyz.orbitary.perigee.internal;
 import org.jetbrains.annotations.Nullable;
 import xyz.orbitary.perigee.Logger;
 import xyz.orbitary.perigee.PerigeeException;
+import xyz.orbitary.perigee.PerigeeTimeoutException;
 import xyz.orbitary.perigee.RpcException;
 import xyz.orbitary.perigee.activity.Activity;
 
@@ -137,9 +138,14 @@ public final class PresenceScheduler {
     }
 
     private synchronized void onFailure(@Nullable Activity activity, List<? extends CompletableFuture<@Nullable Void>> batch, Throwable error) {
-        if (error instanceof RpcException || closed) {
-            if (error instanceof RpcException) Logger.warn("Discord rejected a presence update: {0}", String.valueOf(error.getMessage()));
+        if (error instanceof RpcException) {
+            Logger.warn("Discord rejected a presence update: {0}", String.valueOf(error.getMessage()));
             if (latest == activity) latest = accepted;
+            batch.forEach(f -> f.completeExceptionally(error));
+            return;
+        }
+        if (error instanceof PerigeeTimeoutException || closed) {
+            if (error instanceof PerigeeTimeoutException) Logger.warn("Discord did not confirm a presence update: {0}", String.valueOf(error.getMessage()));
             batch.forEach(f -> f.completeExceptionally(error));
             return;
         }

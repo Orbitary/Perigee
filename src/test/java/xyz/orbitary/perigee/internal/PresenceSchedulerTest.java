@@ -11,6 +11,7 @@ import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import xyz.orbitary.perigee.PerigeeException;
+import xyz.orbitary.perigee.PerigeeTimeoutException;
 import xyz.orbitary.perigee.RpcException;
 import xyz.orbitary.perigee.activity.Activity;
 
@@ -36,6 +37,7 @@ class PresenceSchedulerTest {
     private final List<String> sent = Collections.synchronizedList(new ArrayList<>());
     private final AtomicInteger failuresLeft = new AtomicInteger();
     private volatile boolean discordRejects;
+    private volatile boolean discordSilent;
 
     private PresenceScheduler scheduler(int limit, long windowMillis) {
         return new PresenceScheduler(executor, this::send, limit, TimeUnit.MILLISECONDS.toNanos(windowMillis), System::nanoTime);
@@ -43,6 +45,7 @@ class PresenceSchedulerTest {
 
     private CompletableFuture<@Nullable Void> send(@Nullable Activity activity) {
         sent.add(activity == null ? "clear" : String.valueOf(activity.details()).substring(PREFIX.length()));
+        if (discordSilent) return CompletableFuture.failedFuture(new PerigeeTimeoutException("no reply"));
         if (discordRejects) return CompletableFuture.failedFuture(new RpcException(4000, "rejected"));
         if (failuresLeft.getAndUpdate(n -> Math.max(0, n - 1)) > 0) return CompletableFuture.failedFuture(new PerigeeException("connection lost"));
         return CompletableFuture.completedFuture(null);
@@ -230,6 +233,19 @@ class PresenceSchedulerTest {
         Thread.sleep(150);
 
         assertEquals(List.of("good", "bad", "good"), sent);
+    }
+
+    @Test
+    void anUnansweredUpdateFailsInsteadOfStayingPendingAndLaterOnesStillWork() throws Exception {
+        PresenceScheduler scheduler = scheduler(5, 1_000);
+        scheduler.setOnline(true);
+        discordSilent = true;
+
+        assertInstanceOf(PerigeeTimeoutException.class, failureOf(scheduler.submit(activity("lost"))));
+        discordSilent = false;
+        await(scheduler.submit(activity("later")));
+
+        assertEquals(List.of("lost", "later"), sent);
     }
 
     @Test

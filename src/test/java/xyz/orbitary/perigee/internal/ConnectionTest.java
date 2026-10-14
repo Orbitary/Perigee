@@ -11,6 +11,7 @@ import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import xyz.orbitary.perigee.PerigeeException;
+import xyz.orbitary.perigee.PerigeeTimeoutException;
 import xyz.orbitary.perigee.RpcException;
 import xyz.orbitary.perigee.json.Json;
 import xyz.orbitary.perigee.protocol.Frame;
@@ -24,12 +25,15 @@ import xyz.orbitary.perigee.user.DiscordUser;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -121,13 +125,17 @@ class ConnectionTest {
 
     }
 
+    private static final Connection.Timeouts SHORT = new Connection.Timeouts(Duration.ofMillis(100), Duration.ofMillis(100));
+
+    private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor();
     private final MemoryTransport transport = new MemoryTransport();
     private final RecordingListener listener = new RecordingListener();
-    private final Connection connection = new Connection(transport, listener);
+    private final Connection connection = new Connection(transport, listener, timer, Connection.Timeouts.DEFAULT);
 
     @AfterEach
     void cleanUp() {
         connection.close();
+        timer.shutdownNow();
     }
 
     @Test
@@ -267,6 +275,51 @@ class ConnectionTest {
         assertInstanceOf(PerigeeException.class, failureOf(request));
         assertTrue(transport.written.isEmpty());
         assertTrue(listener.closed.isEmpty(), "the connection must survive an oversized request");
+    }
+
+    @Test
+    void silenceAfterTheHandshakeDropsTheConnectionWithATimeout() throws Exception {
+        Connection quick = new Connection(transport, listener, timer, SHORT);
+        quick.start("123");
+
+        Throwable cause = take(listener.closed).orElseThrow();
+
+        assertInstanceOf(PerigeeTimeoutException.class, cause);
+        assertTrue(transport.closed.get());
+    }
+
+    @Test
+    void readyInTimeCancelsTheReadyTimeout() throws Exception {
+        Connection quick = new Connection(transport, listener, timer, SHORT);
+        quick.start("123");
+
+        transport.feed(Opcode.FRAME, Payloads.READY);
+        take(listener.ready);
+        Thread.sleep(250);
+
+        assertTrue(listener.closed.isEmpty());
+        quick.close();
+    }
+
+    @Test
+    void aLostReplyFailsOnlyThatRequestAndALateReplyIsIgnored() throws Exception {
+        Connection quick = new Connection(transport, listener, timer, SHORT);
+        quick.start("123");
+        take(transport.written);
+        transport.feed(Opcode.FRAME, Payloads.READY);
+        take(listener.ready);
+
+        CompletableFuture<RpcMessage> lost = quick.request("SET_ACTIVITY", Map.of());
+        String lostNonce = nonceOf(take(transport.written));
+
+        assertInstanceOf(PerigeeTimeoutException.class, failureOf(lost));
+        transport.feed(Opcode.FRAME, "{\"cmd\":\"SET_ACTIVITY\",\"data\":{},\"nonce\":\"" + lostNonce + "\"}");
+        CompletableFuture<RpcMessage> next = quick.request("SET_ACTIVITY", Map.of());
+        transport.feed(Opcode.FRAME, "{\"cmd\":\"SET_ACTIVITY\",\"data\":{},\"nonce\":\"" + nonceOf(take(transport.written)) + "\"}");
+
+        await(next);
+        assertTrue(listener.closed.isEmpty(), "a lost reply must not drop the connection");
+        quick.close();
     }
 
     @Test

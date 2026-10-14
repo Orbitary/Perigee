@@ -10,6 +10,7 @@ package xyz.orbitary.perigee.internal;
 import org.jetbrains.annotations.Nullable;
 import xyz.orbitary.perigee.Logger;
 import xyz.orbitary.perigee.PerigeeException;
+import xyz.orbitary.perigee.PerigeeTimeoutException;
 import xyz.orbitary.perigee.protocol.Frame;
 import xyz.orbitary.perigee.protocol.FrameCodec;
 import xyz.orbitary.perigee.protocol.Opcode;
@@ -19,18 +20,36 @@ import xyz.orbitary.perigee.transport.Transport;
 import xyz.orbitary.perigee.user.DiscordUser;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 
 /**
  * One live session with the Discord client: handshake, a reader thread, ping replies and nonce-matched responses.
+ * Discord must send READY after the handshake and answer each request, or the connection is abandoned or the request fails.
  */
 public final class Connection {
     private static final int CLOSE_WAIT_MILLIS = 500;
+
+    /**
+     * @param ready   how long to wait for READY after the handshake
+     * @param request how long to wait for each reply
+     */
+    public record Timeouts(
+      Duration ready,
+      Duration request
+    ) {
+        public static final Timeouts DEFAULT = new Timeouts(Duration.ofSeconds(10), Duration.ofSeconds(10));
+
+    }
 
     public interface Listener {
         void onReady(DiscordUser user);
@@ -43,14 +62,20 @@ public final class Connection {
 
     private final Transport transport;
     private final Listener listener;
+    private final ScheduledExecutorService timer;
+    private final Timeouts timeouts;
     private final Map<String, CompletableFuture<RpcMessage>> pending = new ConcurrentHashMap<>();
     private final AtomicBoolean closing = new AtomicBoolean();
     private volatile @Nullable Thread reader;
     private volatile @Nullable Throwable failure;
+    private volatile @Nullable Throwable abortCause;
+    private volatile @Nullable ScheduledFuture<?> readyTimeout;
 
-    public Connection(Transport transport, Listener listener) {
+    public Connection(Transport transport, Listener listener, ScheduledExecutorService timer, Timeouts timeouts) {
         this.transport = transport;
         this.listener = listener;
+        this.timer = timer;
+        this.timeouts = timeouts;
     }
 
     public void start(String clientId) throws IOException {
@@ -58,6 +83,11 @@ public final class Connection {
         Thread thread = Thread.ofPlatform().daemon().name("perigee-reader").unstarted(this::readLoop);
         reader = thread;
         thread.start();
+        readyTimeout = timer.schedule(
+          () -> abort(new PerigeeTimeoutException("Discord did not send READY within " + timeouts.ready())),
+          timeouts.ready().toMillis(),
+          TimeUnit.MILLISECONDS
+        );
     }
 
     public CompletableFuture<RpcMessage> request(String cmd, Map<String, Object> args) {
@@ -76,6 +106,17 @@ public final class Connection {
         CompletableFuture<RpcMessage> response = new CompletableFuture<>();
         pending.put(nonce, response);
         try {
+            ScheduledFuture<?> timeout = timer.schedule(() -> {
+                if (pending.remove(nonce, response)) {
+                    response.completeExceptionally(new PerigeeTimeoutException("Discord did not reply to " + cmd + " within " + timeouts.request()));
+                }
+            }, timeouts.request().toMillis(), TimeUnit.MILLISECONDS);
+            response.whenComplete((message, error) -> timeout.cancel(false));
+        } catch (RejectedExecutionException e) {
+            pending.remove(nonce);
+            return CompletableFuture.failedFuture(new PerigeeException("Connection is closed", e));
+        }
+        try {
             transport.write(frame);
         } catch (IOException e) {
             pending.remove(nonce);
@@ -83,6 +124,14 @@ public final class Connection {
             abandon();
         }
         return response;
+    }
+
+    /**
+     * Drops a connection that Discord has stopped serving; the reader reports {@code cause} to the listener.
+     */
+    private void abort(Throwable cause) {
+        abortCause = cause;
+        close();
     }
 
     /**
@@ -130,8 +179,10 @@ public final class Connection {
         } catch (IOException | RuntimeException e) {
             cause = e;
         }
-        if (closing.get()) cause = null;
+        if (closing.get()) cause = abortCause;
         closing.set(true);
+        ScheduledFuture<?> timeout = readyTimeout;
+        if (timeout != null) timeout.cancel(false);
         try {
             transport.close();
         } catch (IOException ignored) {
@@ -167,6 +218,8 @@ public final class Connection {
 
     private boolean onMessage(RpcMessage message) {
         if ("READY".equals(message.evt())) {
+            ScheduledFuture<?> timeout = readyTimeout;
+            if (timeout != null) timeout.cancel(false);
             listener.onReady(RpcMessage.user(RpcMessage.map(message.data(), "user")));
             return true;
         }
