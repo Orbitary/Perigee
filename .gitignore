@@ -1,0 +1,106 @@
+# Common .gitignore file for all Orbitary projects.
+# This file should not be edited directly. Instead edit it in: https://github.com/Orbitary/Convention/edit/main/.gitignore
+
+# ── Gradle ─────────────────────────────────────────
+.gradle/
+gradle/
+!gradle/wrapper/gradle-wrapper.jar
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+buildScan-data/
+
+
+# ── IntelliJ ───────────────────────────────────────
+.idea/*
+!.idea/codeStyles
+!.idea/inspectionProfiles
+!.idea/icon.png
+!.idea/copyright
+
+
+# ── Kotlin ─────────────────────────────────────────
+.kotlin
+
+
+# ── Eclipse ────────────────────────────────────────
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+
+# ── NetBeans ───────────────────────────────────────
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+
+# ── VS Code ────────────────────────────────────────
+.vscode/
+
+
+# ── Windows ────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+
+# ── Mac ────────────────────────────────────────────
+.DS_Store
+.Spotlight-V100
+.Trashes
+
+
+# ── Minecraft ──────────────────────────────────────
+run/
+plugins/
+
+
+# ── Web ────────────────────────────────────────────
+node_modules/
+.astro/
+
+
+# ── Agents ─────────────────────────────────────────
+.claude/
+.crush/
+
+
+# ── Test Results────────────────────────────────────
+test-results/
+coverage/
+*.lcov
+*.exec
+
+
+# ── Logs ───────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+
+# ── Misc ───────────────────────────────────────────
+.env
+.env.production
+
+*.jar
+*.zip
+*.tar.gz
+*.rar
+out/
+temp/
+test/
+
+!libs/**

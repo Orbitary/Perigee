@@ -1,0 +1,16 @@
+name: Release and Publish
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    uses: Orbitary/Convention/.github/workflows/publish.yml@main
+    with:
+      modules: "."
+      gradleGroup: "xyz.orbitary"
+      java-version: "21"
+    secrets: inherit
