@@ -18,19 +18,25 @@ import java.util.Set;
  * Lists the IPC endpoints a Discord client may be listening on, most likely first.
  */
 public final class EndpointResolver {
-    static final int MAX_INDEX = 9;
+    public static final int MAX_INDEX = 9;
     private static final String WINDOWS_PIPE_PREFIX = "\\\\?\\pipe\\";
     private static final String[] UNIX_ENV_DIRS = {"XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP"};
-    private static final String[] SANDBOX_SUBDIRS = {"app/com.discordapp.Discord", "snap.discord"};
+    private static final String[] SANDBOX_SUBDIRS = {
+      "app/com.discordapp.Discord", "snap.discord",
+      "app/com.discordapp.DiscordPTB", "snap.discord-ptb",
+      "app/com.discordapp.DiscordCanary", "snap.discord-canary"
+    };
 
     private EndpointResolver() {}
 
     /**
-     * @param windows   whether to produce named pipes
-     * @param env       environment variables
-     * @param extraDirs directories searched before the defaults
+     * @param windows        whether to produce named pipes
+     * @param env            environment variables
+     * @param extraDirs      directories searched before the defaults
+     * @param preferredIndex the {@code discord-ipc-N} index tried first in every directory, 0 to 9
      */
-    public static List<String> resolve(boolean windows, Map<String, String> env, List<String> extraDirs) {
+    public static List<String> resolve(boolean windows, Map<String, String> env, List<String> extraDirs, int preferredIndex) {
+        if (preferredIndex < 0 || preferredIndex > MAX_INDEX) throw new IllegalArgumentException("preferredIndex must be between 0 and " + MAX_INDEX);
         Set<String> bases = new LinkedHashSet<>();
         if (windows) {
             bases.add(WINDOWS_PIPE_PREFIX);
@@ -53,11 +59,16 @@ public final class EndpointResolver {
 
         List<String> endpoints = new ArrayList<>(bases.size() * (MAX_INDEX + 1));
         for (String base : bases) {
+            endpoints.add(base + "discord-ipc-" + preferredIndex);
             for (int i = 0; i <= MAX_INDEX; i++) {
-                endpoints.add(base + "discord-ipc-" + i);
+                if (i != preferredIndex) endpoints.add(base + "discord-ipc-" + i);
             }
         }
         return endpoints;
+    }
+
+    public static List<String> resolve(boolean windows, Map<String, String> env, List<String> extraDirs) {
+        return resolve(windows, env, extraDirs, 0);
     }
 
     public static List<String> resolve() {

@@ -8,10 +8,14 @@
 package xyz.orbitary.perigee.transport;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -33,18 +37,22 @@ class EndpointResolverTest {
 
         List<String> endpoints = EndpointResolver.resolve(false, env, List.of("/custom"));
 
-        List<String> firstOfEach = List.of(0, 10, 20, 30, 40, 50).stream().map(endpoints::get).toList();
+        List<String> firstOfEach = List.of(0, 10, 20, 30, 40, 50, 60, 70, 80, 90).stream().map(endpoints::get).toList();
         assertEquals(
           List.of(
             "/custom/discord-ipc-0",
             "/run/user/1000/discord-ipc-0",
             "/run/user/1000/app/com.discordapp.Discord/discord-ipc-0",
             "/run/user/1000/snap.discord/discord-ipc-0",
+            "/run/user/1000/app/com.discordapp.DiscordPTB/discord-ipc-0",
+            "/run/user/1000/snap.discord-ptb/discord-ipc-0",
+            "/run/user/1000/app/com.discordapp.DiscordCanary/discord-ipc-0",
+            "/run/user/1000/snap.discord-canary/discord-ipc-0",
             "/var/tmp/discord-ipc-0",
             "/tmp/discord-ipc-0"
           ), firstOfEach
         );
-        assertEquals(60, endpoints.size());
+        assertEquals(100, endpoints.size());
         assertEquals("/tmp/discord-ipc-9", endpoints.getLast());
     }
 
@@ -90,6 +98,51 @@ class EndpointResolverTest {
         assertTrue(fromTmp.stream().noneMatch(path -> path.contains("snap.discord") || path.contains("com.discordapp.Discord")));
         assertTrue(fromRuntime.contains("/run/user/1/snap.discord/discord-ipc-0"));
         assertTrue(fromRuntime.contains("/run/user/1/app/com.discordapp.Discord/discord-ipc-0"));
+    }
+
+    @Test
+    void ptbAndCanaryInstallsAreSearchedInsideTheirSandboxes() {
+        List<String> endpoints = EndpointResolver.resolve(false, Map.of("XDG_RUNTIME_DIR", "/run/user/1"), List.of());
+
+        for (String sandbox : List.of("app/com.discordapp.DiscordPTB", "snap.discord-ptb", "app/com.discordapp.DiscordCanary", "snap.discord-canary")) {
+            assertTrue(endpoints.contains("/run/user/1/" + sandbox + "/discord-ipc-0"), sandbox);
+        }
+    }
+
+    static Stream<Arguments> macOsEnvironments() {
+        return Stream.of(
+          Arguments.of("TMPDIR only", Map.of("TMPDIR", "/var/folders/ab/cd/T/"), "/var/folders/ab/cd/T/discord-ipc-0", 20),
+          Arguments.of("TMPDIR without trailing slash", Map.of("TMPDIR", "/var/folders/ab/cd/T"), "/var/folders/ab/cd/T/discord-ipc-0", 20),
+          Arguments.of("nothing set", Map.<String, String>of(), "/tmp/discord-ipc-0", 10)
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("macOsEnvironments")
+    void macOsLooksInTmpdirThenTmpWithoutRuntimeDirectory(String name, Map<String, String> env, String first, int expectedSize) {
+        List<String> endpoints = EndpointResolver.resolve(false, env, List.of());
+
+        assertEquals(first, endpoints.getFirst());
+        assertEquals("/tmp/discord-ipc-9", endpoints.getLast());
+        assertEquals(expectedSize, endpoints.size());
+        assertTrue(endpoints.stream().noneMatch(path -> path.contains("snap.") || path.contains("com.discordapp")), "no sandbox directories without XDG_RUNTIME_DIR");
+    }
+
+    @Test
+    void thePreferredIndexIsTriedFirstInEveryDirectory() {
+        List<String> endpoints = EndpointResolver.resolve(false, Map.of("TMPDIR", "/var/tmp"), List.of(), 3);
+
+        assertEquals(List.of("/var/tmp/discord-ipc-3", "/var/tmp/discord-ipc-0", "/var/tmp/discord-ipc-1", "/var/tmp/discord-ipc-2", "/var/tmp/discord-ipc-4"), endpoints.subList(0, 5));
+        assertEquals("/tmp/discord-ipc-3", endpoints.get(10));
+        assertEquals(20, endpoints.size());
+        assertEquals(endpoints.size(), new HashSet<>(endpoints).size());
+        assertEquals("\\\\?\\pipe\\discord-ipc-9", EndpointResolver.resolve(true, Map.of(), List.of(), 9).getFirst());
+    }
+
+    @Test
+    void thePreferredIndexMustBeAValidIpcIndex() {
+        assertThrows(IllegalArgumentException.class, () -> EndpointResolver.resolve(false, Map.of(), List.of(), -1));
+        assertThrows(IllegalArgumentException.class, () -> EndpointResolver.resolve(false, Map.of(), List.of(), 10));
     }
 
     @Test
