@@ -18,6 +18,7 @@ import xyz.orbitary.perigee.json.Json;
 
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -116,6 +117,27 @@ class ActivityPayloadTest {
           "{\"type\":1,\"url\":\"https://twitch.tv/x\",\"details\":\"dd\",\"details_url\":\"https://d\",\"state\":\"ss\",\"state_url\":\"https://s\"}",
           json(activity)
         );
+    }
+
+    @Test
+    void extraFieldsAreWrittenAtTheTopLevelAfterTheTypedOnes() {
+        Activity activity = Activity.of(a -> a.details("dd").extra("new_field", Map.of("nested", List.of(1, "x"))).extra("flag_field", true));
+
+        assertEquals(
+          "{\"type\":0,\"details\":\"dd\",\"new_field\":{\"nested\":[1,\"x\"]},\"flag_field\":true}",
+          json(activity)
+        );
+    }
+
+    @Test
+    void reservedKeysAreExactlyTheTypedFieldsTheMapperWrites() {
+        Activity full = Activity.of(a -> a
+          .name("Name").details("Details").detailsUrl("https://d").state("State").stateUrl("https://s")
+          .statusDisplay(StatusDisplayType.NAME).type(ActivityType.STREAMING).url("https://twitch.tv/x")
+          .timestamps(Timestamps.since(Instant.ofEpochSecond(1))).party("p-1", 1, 2)
+          .largeImage("big", "Big").joinSecret("j-secret").button("b", "https://b").instance(true).flag(ActivityFlag.JOIN));
+
+        assertEquals(Activity.RESERVED_KEYS, ActivityPayload.toMap(full).keySet());
     }
 
     @Test

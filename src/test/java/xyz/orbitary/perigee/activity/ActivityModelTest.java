@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -66,7 +67,7 @@ class ActivityModelTest {
     void constructorCopiesTheCollectionsItIsGiven() {
         Set<ActivityFlag> flags = EnumSet.of(ActivityFlag.JOIN);
         List<Button> buttons = new ArrayList<>();
-        Activity activity = new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, buttons, false, flags);
+        Activity activity = new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, buttons, false, flags, Map.of());
 
         flags.add(ActivityFlag.SPECTATE);
         buttons.add(new Button("late", "https://late"));

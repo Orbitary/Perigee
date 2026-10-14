@@ -8,12 +8,15 @@
 package xyz.orbitary.perigee.activity;
 
 import org.jetbrains.annotations.Nullable;
+import xyz.orbitary.perigee.json.Json;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -37,9 +40,18 @@ public record Activity(
   Secrets secrets,
   List<Button> buttons,
   boolean instance,
-  Set<ActivityFlag> flags
+  Set<ActivityFlag> flags,
+  Map<String, Object> extra
 ) {
     public static final int MAX_BUTTONS = 2;
+
+    /**
+     * The top-level JSON keys Perigee writes itself; {@link Builder#extra} refuses them.
+     */
+    public static final Set<String> RESERVED_KEYS = Set.of(
+      "name", "type", "url", "details", "details_url", "state", "state_url", "status_display_type",
+      "timestamps", "party", "assets", "secrets", "buttons", "instance", "flags"
+    );
 
     public Activity {
         Objects.requireNonNull(type, "type");
@@ -47,6 +59,7 @@ public record Activity(
         Objects.requireNonNull(secrets, "secrets");
         Objects.requireNonNull(buttons, "buttons");
         Objects.requireNonNull(flags, "flags");
+        Objects.requireNonNull(extra, "extra");
         if (type == ActivityType.CUSTOM) throw new IllegalArgumentException("CUSTOM activities are not supported over IPC");
         name = Validation.text("name", name);
         details = Validation.text("details", details);
@@ -58,6 +71,28 @@ public record Activity(
         if (buttons.size() > MAX_BUTTONS) throw new IllegalArgumentException("at most " + MAX_BUTTONS + " buttons are allowed");
         buttons = List.copyOf(buttons);
         flags = flags.isEmpty() ? Set.of() : Collections.unmodifiableSet(EnumSet.copyOf(flags));
+        checkExtra(extra);
+        extra = Collections.unmodifiableMap(new LinkedHashMap<>(extra));
+    }
+
+    private static void checkExtra(Map<String, Object> extra) {
+        extra.forEach((key, value) -> {
+            if (key.isBlank()) throw new IllegalArgumentException("extra field names must not be blank");
+            if (RESERVED_KEYS.contains(key)) throw new IllegalArgumentException("extra field '" + key + "' is already a typed activity field");
+            Objects.requireNonNull(value, key);
+            try {
+                Json.write(value);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("extra field '" + key + "' is not a JSON value", e);
+            }
+        });
+    }
+
+    /**
+     * A builder holding this activity's values, for copy-and-tweak.
+     */
+    public Builder toBuilder() {
+        return new Builder(this);
     }
 
     public static Builder builder() {
@@ -86,8 +121,28 @@ public record Activity(
         private final List<Button> buttons = new ArrayList<>();
         private boolean instance;
         private final Set<ActivityFlag> flags = EnumSet.noneOf(ActivityFlag.class);
+        private final Map<String, Object> extra = new LinkedHashMap<>();
 
         private Builder() {}
+
+        private Builder(Activity activity) {
+            this.name = activity.name;
+            this.type = activity.type;
+            this.details = activity.details;
+            this.detailsUrl = activity.detailsUrl;
+            this.state = activity.state;
+            this.stateUrl = activity.stateUrl;
+            this.statusDisplayType = activity.statusDisplayType;
+            this.url = activity.url;
+            this.timestamps = activity.timestamps;
+            this.party = activity.party;
+            this.assets = activity.assets;
+            this.secrets = activity.secrets;
+            this.buttons.addAll(activity.buttons);
+            this.instance = activity.instance;
+            this.flags.addAll(activity.flags);
+            this.extra.putAll(activity.extra);
+        }
 
         public Builder name(String name) {
             this.name = name;
@@ -229,9 +284,14 @@ public record Activity(
             return this;
         }
 
+        public Builder extra(String key, Object value) {
+            checkExtra(Map.of(key, value));
+            this.extra.put(key, value);
+            return this;
+        }
 
         public Activity build() {
-            return new Activity(name, type, details, detailsUrl, state, stateUrl, statusDisplayType, url, timestamps, party, assets, secrets, buttons, instance, flags);
+            return new Activity(name, type, details, detailsUrl, state, stateUrl, statusDisplayType, url, timestamps, party, assets, secrets, buttons, instance, flags, extra);
         }
 
     }

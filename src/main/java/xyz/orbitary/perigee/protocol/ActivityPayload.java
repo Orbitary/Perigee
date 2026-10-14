@@ -48,6 +48,7 @@ public final class ActivityPayload {
         if (!activity.buttons().isEmpty()) map.put("buttons", buttons(activity.buttons()));
         if (activity.instance()) map.put("instance", true);
         if (!activity.flags().isEmpty()) map.put("flags", ActivityFlag.toBits(activity.flags()));
+        map.putAll(activity.extra());
         return map;
     }
 

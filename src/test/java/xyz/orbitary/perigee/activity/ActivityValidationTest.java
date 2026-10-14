@@ -12,6 +12,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -106,7 +107,7 @@ class ActivityValidationTest {
         Button button = new Button("b", "https://example.com");
         assertThrows(IllegalArgumentException.class, () -> Activity.builder().button(button).button(button).button(button));
         assertThrows(NullPointerException.class, () -> Activity.builder().button((Button)null));
-        assertThrows(IllegalArgumentException.class, () -> new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, List.of(button, button, button), false, Set.of()));
+        assertThrows(IllegalArgumentException.class, () -> new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, List.of(button, button, button), false, Set.of(), Map.of()));
     }
 
     @Test
@@ -121,11 +122,65 @@ class ActivityValidationTest {
     @Test
     @SuppressWarnings("NullAway")
     void canonicalConstructorRejectsNullsThatTheBuilderWouldNeverProduce() {
-        assertThrows(NullPointerException.class, () -> new Activity(null, null, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, List.of(), false, Set.of()));
-        assertThrows(NullPointerException.class, () -> new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, null, Secrets.EMPTY, List.of(), false, Set.of()));
-        assertThrows(NullPointerException.class, () -> new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, null, List.of(), false, Set.of()));
-        assertThrows(NullPointerException.class, () -> new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, null, false, Set.of()));
-        assertThrows(NullPointerException.class, () -> new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, List.of(), false, null));
+        assertThrows(NullPointerException.class, () -> new Activity(null, null, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, List.of(), false, Set.of(), Map.of()));
+        assertThrows(NullPointerException.class, () -> new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, null, Secrets.EMPTY, List.of(), false, Set.of(), Map.of()));
+        assertThrows(NullPointerException.class, () -> new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, null, List.of(), false, Set.of(), Map.of()));
+        assertThrows(NullPointerException.class, () -> new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, null, false, Set.of(), Map.of()));
+        assertThrows(NullPointerException.class, () -> new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, List.of(), false, null, Map.of()));
+    }
+
+    @Test
+    @SuppressWarnings("NullAway")
+    void extraMustBeANonNullMapOfJsonValuesWithFreeNames() {
+        assertThrows(NullPointerException.class, () -> new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, List.of(), false, Set.of(), null));
+        assertThrows(IllegalArgumentException.class, () -> new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, List.of(), false, Set.of(), Map.of("details", "x")));
+        assertThrows(IllegalArgumentException.class, () -> new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, List.of(), false, Set.of(), Map.of(" ", "x")));
+        assertThrows(IllegalArgumentException.class, () -> new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, List.of(), false, Set.of(), Map.of("new_field", new Object())));
+        assertThrows(NullPointerException.class, () -> Activity.builder().extra("new_field", (Object)null));
+    }
+
+    @Test
+    void extraRefusesEveryTypedFieldName() {
+        for (String key : Activity.RESERVED_KEYS) {
+            rejects(a -> a.extra(key, "x"));
+        }
+        assertDoesNotThrow(() -> Activity.of(a -> a.extra("new_field", Map.of("nested", List.of(1, "two", true)))));
+    }
+
+    @Test
+    void extraTakesPartInEqualityAndIsCopiedDefensively() {
+        Map<String, Object> raw = new java.util.HashMap<>(Map.of("a_field", 1));
+        Activity activity = new Activity(null, ActivityType.PLAYING, null, null, null, null, null, null, null, null, Assets.EMPTY, Secrets.EMPTY, List.of(), false, Set.of(), raw);
+
+        raw.put("b_field", 2);
+
+        assertEquals(Map.of("a_field", 1), activity.extra());
+        assertNotEquals(activity, Activity.of(a -> a.extra("a_field", 2)));
+        assertEquals(activity, Activity.of(a -> a.extra("a_field", 1)));
+        assertThrows(UnsupportedOperationException.class, () -> activity.extra().put("c_field", 3));
+    }
+
+    @Test
+    void toBuilderCopiesEveryFieldAndTweaksDoNotLeakBack() {
+        Activity original = Activity.of(a -> a
+          .name("Name").type(ActivityType.LISTENING).details("Details").detailsUrl("https://example.com/d")
+          .state("State").stateUrl("https://example.com/s").statusDisplay(StatusDisplayType.STATE)
+          .startedAt(java.time.Instant.ofEpochSecond(100)).party("p-1", 1, 2)
+          .largeImage("big", "Big").smallImage("small", "Small").inviteCoverImage("cover")
+          .joinSecret("j-secret").button("Docs", "https://example.com").instance(true)
+          .flag(ActivityFlag.JOIN).extra("new_field", 7));
+
+        Activity copy = original.toBuilder().build();
+        Activity tweaked = original.toBuilder().details("Changed").button("More", "https://example.com/more").flag(ActivityFlag.SPECTATE).extra("other_field", 8).build();
+
+        assertEquals(original, copy);
+        assertEquals("Changed", tweaked.details());
+        assertEquals(2, tweaked.buttons().size());
+        assertEquals(Set.of(ActivityFlag.JOIN, ActivityFlag.SPECTATE), tweaked.flags());
+        assertEquals(Map.of("new_field", 7, "other_field", 8), tweaked.extra());
+        assertEquals("Details", original.details());
+        assertEquals(1, original.buttons().size());
+        assertEquals(Map.of("new_field", 7), original.extra());
     }
 
     @Test
