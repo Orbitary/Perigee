@@ -37,11 +37,11 @@ public record RpcMessage(
     }
 
     public RpcException toException() {
-        return exception(data);
+        return exception(data, cmd);
     }
 
     public static RpcException closeReason(String json) {
-        return exception(object(Json.parse(json)));
+        return exception(object(Json.parse(json)), null);
     }
 
     public static DiscordUser user(Map<?, ?> map) {
@@ -67,10 +67,10 @@ public record RpcMessage(
         throw new IllegalArgumentException("RPC payload is not a JSON object");
     }
 
-    private static RpcException exception(Map<?, ?> map) {
+    private static RpcException exception(Map<?, ?> map, @Nullable String cmd) {
         int code = map.get("code") instanceof Number n ? n.intValue() : 0;
         String message = map.get("message") instanceof String s ? s : "Unknown error";
-        return new RpcException(code, message);
+        return new RpcException(code, message, cmd);
     }
 
 }

@@ -184,7 +184,10 @@ class ConnectionTest {
 
         transport.feed(Opcode.FRAME, "{\"cmd\":\"SET_ACTIVITY\",\"evt\":\"ERROR\",\"data\":{\"code\":4000,\"message\":\"nope\"},\"nonce\":\"" + nonce + "\"}");
 
-        assertEquals(4000, assertInstanceOf(RpcException.class, failureOf(request)).code());
+        RpcException failure = assertInstanceOf(RpcException.class, failureOf(request));
+        assertEquals(4000, failure.code());
+        assertEquals("nope", failure.reason());
+        assertEquals("SET_ACTIVITY", failure.command());
         assertTrue(listener.closed.isEmpty(), "the connection must survive a rejected command");
     }
 

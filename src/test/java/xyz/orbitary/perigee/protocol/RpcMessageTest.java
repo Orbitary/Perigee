@@ -59,7 +59,9 @@ class RpcMessageTest {
         assertTrue(message.isError());
         RpcException exception = message.toException();
         assertEquals(4000, exception.code());
-        assertEquals("Invalid activity (code 4000)", exception.getMessage());
+        assertEquals("Invalid activity", exception.reason());
+        assertEquals("SET_ACTIVITY", exception.command());
+        assertEquals("Invalid activity (code 4000, command SET_ACTIVITY)", exception.getMessage());
     }
 
     @Test
@@ -76,6 +78,7 @@ class RpcMessageTest {
 
         assertEquals(4001, reason.code());
         assertEquals("Unknown client (code 4001)", reason.getMessage());
+        assertNull(reason.command());
     }
 
     @Test
