@@ -227,11 +227,12 @@ public final class PerigeeClient implements AutoCloseable {
 
     private void onEvent(RpcMessage message) {
         Map<String, Object> data = message.data();
-        switch (message.evt() == null ? "" : message.evt()) {
+        String event = message.evt() == null ? "" : message.evt();
+        switch (event) {
             case Requests.EVENT_JOIN -> fire(new Join(String.valueOf(data.get("secret"))));
             case Requests.EVENT_SPECTATE -> fire(new Spectate(String.valueOf(data.get("secret"))));
             case Requests.EVENT_JOIN_REQUEST -> fire(new JoinRequest(RpcMessage.user(RpcMessage.map(data, "user"))));
-            default -> Logger.debug("Ignoring event {0}", message.evt());
+            default -> Logger.debug("Ignoring event {0}", event);
         }
     }
 

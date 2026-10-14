@@ -7,6 +7,7 @@
 
 package xyz.orbitary.perigee;
 
+import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,10 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -46,8 +50,8 @@ class PerigeeClientTest {
     @TempDir
     Path dir;
 
+    private final List<PerigeeClient> clients = new ArrayList<>();
     private FakeDiscord discord;
-    private PerigeeClient client;
 
     @BeforeEach
     void startServer() throws IOException {
@@ -56,7 +60,7 @@ class PerigeeClientTest {
 
     @AfterEach
     void stop() throws IOException {
-        if (client != null) client.close();
+        clients.forEach(PerigeeClient::close);
         discord.close();
     }
 
@@ -64,10 +68,16 @@ class PerigeeClientTest {
         return PerigeeClient.builder("1234567890").transport(() -> UnixSocketTransport.connect(discord.socket.toString()));
     }
 
+    private PerigeeClient start(PerigeeClient.Builder builder) {
+        PerigeeClient client = builder.build();
+        clients.add(client);
+        return client;
+    }
+
     @Test
     void handshakesSetsActivityAndDeliversEvents() throws Exception {
         discord.joinSecret = "abc";
-        client = builder().build();
+        PerigeeClient client = start(builder());
         BlockingQueue<Join> joins = new LinkedBlockingQueue<>();
         client.on(Join.class, joins::add);
 
@@ -76,20 +86,20 @@ class PerigeeClientTest {
         assertEquals(new Join("abc"), joins.poll(5, TimeUnit.SECONDS));
 
         client.setActivity(a -> a.details("hi").largeImage("big")).get(5, TimeUnit.SECONDS);
-        Map<?, ?> args = (Map<?, ?>)discord.awaitCommand("SET_ACTIVITY").get("args");
-        assertEquals(ProcessHandle.current().pid(), ((Number)args.get("pid")).longValue());
-        Map<?, ?> activity = (Map<?, ?>)args.get("activity");
-        assertEquals("hi", activity.get("details"));
-        assertEquals(0L, ((Number)activity.get("type")).longValue());
+        Map<?, ?> args = child(discord.awaitCommand("SET_ACTIVITY"), "args");
+        assertEquals(ProcessHandle.current().pid(), number(args, "pid"));
+        Map<?, ?> activity = child(args, "activity");
+        assertEquals("hi", text(activity, "details"));
+        assertEquals(0L, number(activity, "type"));
 
         client.clearActivity().get(5, TimeUnit.SECONDS);
-        assertNull(((Map<?, ?>)discord.awaitCommand("SET_ACTIVITY").get("args")).get("activity"));
+        assertFalse(child(discord.awaitCommand("SET_ACTIVITY"), "args").containsKey("activity"));
     }
 
     @Test
     void resendsPresenceAfterDiscordRestarts() throws Exception {
         discord.dropFirstSessionAfterActivity = true;
-        client = builder().reconnectDelay(Duration.ofMillis(20), Duration.ofMillis(100)).build();
+        PerigeeClient client = start(builder().reconnectDelay(Duration.ofMillis(20), Duration.ofMillis(100)));
         BlockingQueue<Disconnected> drops = new LinkedBlockingQueue<>();
         client.on(Disconnected.class, drops::add);
 
@@ -107,7 +117,7 @@ class PerigeeClientTest {
     @Test
     void connectFailsForRejectedApplicationId() {
         discord.rejectHandshake = true;
-        client = builder().build();
+        PerigeeClient client = start(builder());
 
         ExecutionException e = assertThrows(ExecutionException.class, () -> client.connect().get(5, TimeUnit.SECONDS));
         RpcException rpc = assertInstanceOf(RpcException.class, e.getCause());
@@ -117,7 +127,7 @@ class PerigeeClientTest {
     @Test
     void keepsRetryingUntilDiscordAppears() throws Exception {
         discord.close();
-        client = builder().reconnectDelay(Duration.ofMillis(20), Duration.ofMillis(50)).build();
+        PerigeeClient client = start(builder().reconnectDelay(Duration.ofMillis(20), Duration.ofMillis(50)));
         var connected = client.connect();
         Thread.sleep(150);
         assertFalse(connected.isDone());
@@ -132,8 +142,19 @@ class PerigeeClientTest {
     }
 
     private static String activityDetails(Map<String, Object> command) {
-        Map<?, ?> args = (Map<?, ?>)command.get("args");
-        return (String)((Map<?, ?>)args.get("activity")).get("details");
+        return text(child(child(command, "args"), "activity"), "details");
+    }
+
+    private static Map<?, ?> child(Map<?, ?> map, String key) {
+        return (Map<?, ?>)Objects.requireNonNull(map.get(key), key);
+    }
+
+    private static long number(Map<?, ?> map, String key) {
+        return ((Number)Objects.requireNonNull(map.get(key), key)).longValue();
+    }
+
+    private static String text(Map<?, ?> map, String key) {
+        return (String)Objects.requireNonNull(map.get(key), key);
     }
 
     private static final class FakeDiscord implements AutoCloseable {
@@ -141,7 +162,7 @@ class PerigeeClientTest {
         final ServerSocketChannel server;
         final BlockingQueue<Map<String, Object>> commands = new LinkedBlockingQueue<>();
         final AtomicInteger sessions = new AtomicInteger();
-        volatile String joinSecret;
+        volatile @Nullable String joinSecret;
         volatile boolean dropFirstSessionAfterActivity;
         volatile boolean rejectHandshake;
 
@@ -193,8 +214,9 @@ class PerigeeClientTest {
                     boolean dropNow = dropFirstSessionAfterActivity && session == 1 && "SET_ACTIVITY".equals(command.get("cmd"));
                     if (dropNow) return;
                     out.write(FrameCodec.encode(Opcode.FRAME, reply(command)));
-                    if (joinSecret != null && "ACTIVITY_JOIN_REQUEST".equals(command.get("evt"))) {
-                        out.write(FrameCodec.encode(Opcode.FRAME, Json.write(Map.of("cmd", "DISPATCH", "evt", "ACTIVITY_JOIN", "data", Map.of("secret", joinSecret)))));
+                    String secret = joinSecret;
+                    if (secret != null && "ACTIVITY_JOIN_REQUEST".equals(command.get("evt"))) {
+                        out.write(FrameCodec.encode(Opcode.FRAME, Json.write(Map.of("cmd", "DISPATCH", "evt", "ACTIVITY_JOIN", "data", Map.of("secret", secret)))));
                     }
                 }
             } catch (IOException ignored) {
